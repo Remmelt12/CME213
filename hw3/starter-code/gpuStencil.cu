@@ -64,6 +64,13 @@ __global__
 void gpuStencil(float* next, const float* curr, int gx, int nx, int ny,
                 float xcfl, float ycfl) {
     // TODO
+    uint i = blockIdx.x*blockDim.x+threadIdx.x;
+    uint j = blockIdx.y*blockDim.y+threadIdx.y;
+
+    if(i<nx && j<ny){
+        next[i][j]=Stencil(curr[i][j],gx,xcfl,ycfl);
+    }
+
 }
 
 /**
@@ -84,8 +91,9 @@ double gpuComputation(Grid& curr_grid, const simParams& params) {
     Grid next_grid(curr_grid);
 
     // TODO: Declare variables/Compute parameters.
-    dim3 threads(0, 0);
-    dim3 blocks(0, 0);
+    dim3 threads(8, 8);
+    dim3
+        blocks((params.nx()+threads.x-1)/threads.x,(params.ny()+threads.y-1)/threads.y);
 
     event_pair timer;
     start_timer(&timer);
@@ -96,6 +104,7 @@ double gpuComputation(Grid& curr_grid, const simParams& params) {
         BC.updateBC(next_grid.dGrid_, curr_grid.dGrid_);
 
         // TODO: Apply stencil.
+        gpuStencil<<<blocks,threads>>>(next_grid,curr_grid,params.gx(),params.nx(),params.ny()); 
 
         check_launch("gpuStencil");
 
