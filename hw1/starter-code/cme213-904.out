@@ -1,0 +1,52 @@
+The master node of this job is gpu-202-1
+This job runs on the following nodes:
+gpu-202-1
+Starting at Mon Apr 23 19:52:10 PDT 2018
+Running on hosts: gpu-202-1
+Running on 1 nodes.
+Running on 24 processors.
+Current working directory is ~/startercode/
+
+Output from code
+----------------
+Parallel
+Sum Even: 757361650
+Sum Odd: 742539102
+Time: 0.019506
+Serial
+Sum Even: 757361650
+Sum Odd: 742539102
+Time: 0.149621
+tests_q2.cpp:92:Test1	TEST PASSED.
+tests_q2.cpp:109:Test2	TEST PASSED.
+tests_q2.cpp:121:Test3	TEST PASSED.
+tests_q2.cpp:140:Test4	TEST PASSED.
+tests_q2.cpp:156:Test5	TEST PASSED.
+Serial Radix Sort is correct
+Parallel Radix Sort is correct
+stl: 0.432081
+serial radix: 0.19181
+parallel radix: 0.0797029
+tests_q2.cpp:92:Test1	TEST PASSED.
+tests_q2.cpp:109:Test2	TEST PASSED.
+tests_q2.cpp:121:Test3	TEST PASSED.
+tests_q2.cpp:140:Test4	TEST PASSED.
+tests_q2.cpp:156:Test5	TEST PASSED.
+Serial Radix Sort is correct
+Parallel Radix Sort is correct
+stl: 0.432622
+serial radix: 0.190939
+parallel radix: 0.0799681
+Threads Blocks / Timing
+        1        2        4        8       12       16       24       32       40       48  
+   1    0.202    0.204    0.207    0.210    0.211    0.212    0.220    0.225    0.232    0.225 
+   2    0.190    0.120    0.121    0.125    0.119    0.130    0.133    0.143    0.147    0.157 
+   4    0.200    0.120    0.069    0.072    0.077    0.078    0.081    0.090    0.096    0.106 
+   8    0.202    0.121    0.068    0.056    0.066    0.063    0.067    0.075    0.078    0.088 
+  12    0.201    0.120    0.067    0.056    0.054    0.059    0.060    0.067    0.072    0.076 
+  16    0.203    0.123    0.069    0.059    0.057    0.056    0.064    0.066    0.071    0.076 
+  24    0.207    0.119    0.070    0.061    0.056    0.054    0.070    0.071    0.072    0.081 
+  32    0.195    0.116    0.077    0.056    0.054    0.055    0.063    0.070    0.073    0.079 
+  40    0.235    0.136    0.112    0.065    0.050    0.057    0.065    0.067    0.069    0.081 
+  48    0.216    0.126    0.075    0.060    0.053    0.053    0.061    0.064    0.074    0.081 
+Benchmark runs: PASS
