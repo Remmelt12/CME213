@@ -61,14 +61,15 @@ float Stencil(const float* curr, int width, float xcfl, float ycfl) {
  */
 template<int order>
 __global__
-void gpuStencil(float* next, const float* curr, int gx, int nx, int ny,
+void gpuStencil(float* next,const float* curr, int gx, int nx, int ny,
                 float xcfl, float ycfl) {
     // TODO
     uint i = blockIdx.x*blockDim.x+threadIdx.x;
     uint j = blockIdx.y*blockDim.y+threadIdx.y;
+    uint index = i+gx*j;
 
-    if(i<nx && j<ny){
-        next[i][j]=Stencil<order>(curr[i][j],gx,xcfl,ycfl);
+    if(index<nx*ny){
+        next[index]=Stencil<order>(curr[index],gx,xcfl,ycfl);
     }
 
 }
@@ -95,14 +96,17 @@ double gpuComputation(Grid& curr_grid, const simParams& params) {
     float xcfl = params.xcfl();
     float ycfl = params.ycfl();
 
+
     int nx = params.nx();
     int ny = params.ny();
 
     int gx = params.gx();
-    dim3 threads(8, 8);
+    int order = params.order();
+    dim3 threads(32, 6);
     dim3
         blocks((params.nx()+threads.x-1)/threads.x,(params.ny()+threads.y-1)/threads.y);
 
+    std::cout<<blocks.x <<std::endl; 
     event_pair timer;
     start_timer(&timer);
 
@@ -112,8 +116,8 @@ double gpuComputation(Grid& curr_grid, const simParams& params) {
         BC.updateBC(next_grid.dGrid_, curr_grid.dGrid_);
 
         // TODO: Apply stencil.
-        gpuStencil<params.order><<<blocks,threads>>>(next_grid.hGrid_,curr_grid.hGrid_.data()
-                                        ,gx,nx,ny); 
+        gpuStencil<order><<<blocks,threads>>>(next_grid.hGrid_.data(),
+                                        curr_grid.hGrid_.data(),gx,nx,ny,xcfl,ycfl); 
 
         check_launch("gpuStencil");
 
@@ -149,6 +153,14 @@ __global__
 void gpuStencilLoop(float* next, const float* curr, int gx, int nx, int ny,
                     float xcfl, float ycfl) {
     // TODO
+    uint i = blockIdx.x*blockDim.x+threadIdx.x;
+    uint j = blockIdx.y*blockDim.y+threadIdx.y;
+    uint index = i+gx*j;
+
+    for(uint index=i+gx*j;index<nx*ny;i+=){
+        next[index]=Stencil<order>(curr[index],gx,xcfl,ycfl);
+    }
+
 }
 
 /**

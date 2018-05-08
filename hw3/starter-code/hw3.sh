@@ -10,13 +10,13 @@
 #SBATCH --output=cme213-%j.out
 #SBATCH --error=cme213-%j.err
 
-echo "In file hw3.sh, update the line below before running the script"
-echo "WORKDIR='<directory with your code>'"
-exit 0
+#echo "In file hw3.sh, update the line below before running the script"
+#echo "WORKDIR='<directory with your code>'"
+#exit 0
 
 # Comment the 3 lines above after setting WORKDIR
 
-WORKDIR='<directory with your code>'
+WORKDIR='~/CME213/hw3/'
 export WORKDIR
 
 ### ---------------------------------------
@@ -49,3 +49,4 @@ sed -i "4s/.*/$order/" "params.in"
 
 # Run multiple cases
 #./runcases.sh
+

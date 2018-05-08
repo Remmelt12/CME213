@@ -20,3 +20,4 @@ Grid.o: Grid.cu Grid.h
 clean:
 	rm -f *.o *~ *~ *Errors.txt main 
 	rm -rf *.dSYM
+	rm -f *.out *.err
