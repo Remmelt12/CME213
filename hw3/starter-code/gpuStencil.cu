@@ -66,10 +66,10 @@ void gpuStencil(float* next,const float* curr, int gx, int nx, int ny,
     // TODO
     uint i = blockIdx.x*blockDim.x+threadIdx.x;
     uint j = blockIdx.y*blockDim.y+threadIdx.y;
-    uint index = i+gx*j;
 
-    if(index<nx*ny){
-        next[index]=Stencil<order>(curr[index],gx,xcfl,ycfl);
+    if(i<nx&&j<ny){
+        uint index = i+nx*j;
+        next[index]=Stencil<order>(&curr[index],gx,xcfl,ycfl);
     }
 
 }
@@ -93,15 +93,15 @@ double gpuComputation(Grid& curr_grid, const simParams& params) {
 
     // TODO: Declare variables/Compute parameters.
 
-    float xcfl = params.xcfl();
-    float ycfl = params.ycfl();
+    const float xcfl = params.xcfl();
+    const float ycfl = params.ycfl();
 
 
-    int nx = params.nx();
-    int ny = params.ny();
+    const int nx = params.nx();
+    const int ny = params.ny();
 
-    int gx = params.gx();
-    int order = params.order();
+    const int gx = params.gx();
+    const int order = params.order();
     dim3 threads(32, 6);
     dim3
         blocks((params.nx()+threads.x-1)/threads.x,(params.ny()+threads.y-1)/threads.y);
@@ -116,9 +116,20 @@ double gpuComputation(Grid& curr_grid, const simParams& params) {
         BC.updateBC(next_grid.dGrid_, curr_grid.dGrid_);
 
         // TODO: Apply stencil.
-        gpuStencil<order><<<blocks,threads>>>(next_grid.hGrid_.data(),
+        switch(order){
+            case 2:
+                gpuStencil<2><<<blocks,threads>>>(next_grid.hGrid_.data(),
                                         curr_grid.hGrid_.data(),gx,nx,ny,xcfl,ycfl); 
-
+                break;
+            case 4:
+                gpuStencil<4><<<blocks,threads>>>(next_grid.hGrid_.data(),
+                                        curr_grid.hGrid_.data(),gx,nx,ny,xcfl,ycfl); 
+                break;
+            case 8:
+                gpuStencil<8><<<blocks,threads>>>(next_grid.hGrid_.data(),
+                                        curr_grid.hGrid_.data(),gx,nx,ny,xcfl,ycfl); 
+                break;
+        }
         check_launch("gpuStencil");
 
         Grid::swap(curr_grid, next_grid);
@@ -153,13 +164,14 @@ __global__
 void gpuStencilLoop(float* next, const float* curr, int gx, int nx, int ny,
                     float xcfl, float ycfl) {
     // TODO
+    /*
     uint i = blockIdx.x*blockDim.x+threadIdx.x;
     uint j = blockIdx.y*blockDim.y+threadIdx.y;
     uint index = i+gx*j;
 
     for(uint index=i+gx*j;index<nx*ny;i+=){
         next[index]=Stencil<order>(curr[index],gx,xcfl,ycfl);
-    }
+    }*/
 
 }
 
