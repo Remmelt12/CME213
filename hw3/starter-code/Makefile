@@ -2,7 +2,7 @@ CXX=g++
 CUD=nvcc
 LDFLAGS=-lcudart -L=/usr/local/cuda-8.0/lib64
 CXXFLAGS=-O3 -Wall -Winline -Wextra -Wno-strict-aliasing
-CUDFLAGS=-O3 -arch=sm_20 -Xcompiler -Wall,-Winline,-Wextra,-Wno-strict-aliasing
+CUDFLAGS=-O30 -arch=sm_20 -Xcompiler -Wall,-Winline,-Wextra,-Wno-strict-aliasing
 
 
 main: main.o simParams.o Grid.o

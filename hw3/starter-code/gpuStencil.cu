@@ -68,8 +68,8 @@ void gpuStencil(float* next,const float* curr, int gx, int nx, int ny,
     uint j = blockIdx.y*blockDim.y+threadIdx.y;
 
     uint bdr = (gx-nx)/2;
-    if(bdr<i && i<nx+bdr && bdr<j && j<ny+bdr){
-        uint index = i+gx*j;
+    if(i<nx && j<ny){
+        uint index = i+bdr+gx*(j+bdr);
         next[index]=Stencil<order>(&curr[index],gx,xcfl,ycfl);
     }
 
@@ -143,7 +143,6 @@ double gpuComputation(Grid& curr_grid, const simParams& params) {
 /**
  * Kernel to propagate finite difference grid from the current
  * time point to the next.
- *
  * This kernel should be optimized to compute finite difference updates
  * in blocks of size (blockDim.y * numYPerStep) * blockDim.x. Each thread
  * should calculate at most numYPerStep updates. It should still only use
@@ -166,16 +165,19 @@ void gpuStencilLoop(float* next, const float* curr, int gx, int nx, int ny,
                     float xcfl, float ycfl) {
     // TODO
     uint i = blockIdx.x*blockDim.x+threadIdx.x;
-    uint j = (blockIdx.y*blockDim.y+threadIdx.y)*numYPerStep;
+    uint j = blockIdx.y*blockDim.y*numYPerStep+threadIdx.y;
 
     uint bdr = (gx-nx)/2;
-    if(bdr<i && i<nx+bdr){ 
-        for (uint rowid=j;rowid<j+numYPerStep;rowid++)
-            if(bdr<rowid && rowid<ny+bdr){ 
-                uint index = i+gx*rowid;
+    
+    if(i<nx){ 
+        for (uint rowid=0;rowid<numYPerStep;rowid++){
+            if(j<ny){ 
+                uint index = i+bdr+gx*(j+bdr);
                 next[index]=Stencil<order>(&curr[index],gx,xcfl,ycfl);
             }
-        }
+            j+=blockDim.y;
+        }    
+    }
 
 }
 
@@ -198,7 +200,7 @@ double gpuComputationLoop(Grid& curr_grid, const simParams& params) {
     // TODO: Declare variables/Compute parameters.
     const float xcfl = params.xcfl();
     const float ycfl = params.ycfl();
-    const int num_y_steps=32;
+    const int num_y_steps=5;
 
 
     const int nx = params.nx();
@@ -207,7 +209,7 @@ double gpuComputationLoop(Grid& curr_grid, const simParams& params) {
     const int order = params.order();
     dim3 threads(32, 6);
     dim3
-        blocks((params.nx()+threads.x-1)/threads.x,(params.ny()+threads.y-1)/threads.y/num_y_steps);
+        blocks((params.nx()+threads.x-1)/threads.x,(params.ny()+num_y_steps*threads.y-1)/(threads.y*num_y_steps));
 
     const int gx = params.gx();
     event_pair timer;
