@@ -169,15 +169,13 @@ void gpuStencilLoop(float* next, const float* curr, int gx, int nx, int ny,
 
     uint bdr = (gx-nx)/2;
     
-    if(i<nx){ 
-        for (uint rowid=0;rowid<numYPerStep;rowid++){
-            if(j<ny){ 
-                uint index = i+bdr+gx*(j+bdr);
-                next[index]=Stencil<order>(&curr[index],gx,xcfl,ycfl);
-            }
-            j+=blockDim.y;
-        }    
-    }
+    for (uint rowid=0;rowid<numYPerStep;rowid++){
+        if(j<ny&&i<nx){ 
+            uint index = i+bdr+gx*(j+bdr);
+            next[index]=Stencil<order>(&curr[index],gx,xcfl,ycfl);
+        }
+        j+=blockDim.y;
+    }    
 
 }
 
@@ -262,6 +260,37 @@ __global__
 void gpuShared(float* next, const float* curr, int gx, int gy,
                float xcfl, float ycfl) {
     // TODO
+    __shared__ float submesh[side*side];
+    uint i = blockIdx.x*blockDim.x+threadIdx.x;
+    uint j = blockIdx.y*blockDim.y*side+threadIdx.y;
+
+    uint bdr = order/2;
+
+    for(int k =0;k<side/blockDim.y;k++){
+        if(i<gx && j<gy){
+            uint index = i+gx*j;
+            uint index_shared = threadIdx.x+side*(threadIdx.y+k*blockDim.y);
+            submesh[index_shared]=curr[index];
+        }
+        j+=blockDim.y;
+    }
+    __syncthreads();
+    
+    uint x = blockIdx.x*blockDim.x+threadIdx.x;
+    uint y = blockIdx.y*blockDim.y*side+threadIdx.y;
+
+    int nx = gx-order;
+    int ny = gy-order;
+
+    for (uint k=0;k<side/blockDim.y;k++){
+        if(bdr<y && y<ny && bdr<x && x<nx){ 
+            uint index = x+gx*y;
+            uint index_shared = threadIdx.x+side*(threadIdx.y+k*blockDim.y);
+            next[index]=Stencil<order>(&submesh[index_shared],side,xcfl,ycfl);
+        }
+        y+=blockDim.y;
+    }    
+
 }
 
 /**
@@ -283,16 +312,41 @@ double gpuComputationShared(Grid& curr_grid, const simParams& params) {
     Grid next_grid(curr_grid);
 
     // TODO: Declare variables/Compute parameters.
-    dim3 threads(0, 0);
-    dim3 blocks(0, 0);
+    const float xcfl = params.xcfl();
+    const float ycfl = params.ycfl();
+    const int side=32;
+
+
+    const int gx = params.gx();
+    const int gy = params.gy();
+
+    dim3 threads(32, 8);
+    dim3
+        blocks((gx+threads.x-1)/threads.x,(gy+side-1)/side);
+
 
     event_pair timer;
     start_timer(&timer);
+
 
     for(int i = 0; i < params.iters(); ++i) {
 
         // update the values on the boundary only
         BC.updateBC(next_grid.dGrid_, curr_grid.dGrid_);
+        switch(order){
+            case 2:
+                gpuShared<side,2><<<blocks,threads>>>(next_grid.dGrid_,
+                                        curr_grid.dGrid_,gx,gy,xcfl,ycfl); 
+                break;
+            case 4:
+                gpuShared<side,4><<<blocks,threads>>>(next_grid.dGrid_,
+                                        curr_grid.dGrid_,gx,gy,xcfl,ycfl); 
+                break;
+            case 8:
+                gpuShared<side,8><<<blocks,threads>>>(next_grid.dGrid_,
+                                        curr_grid.dGrid_,gx,gy,xcfl,ycfl); 
+                break;
+        }
 
         // TODO: Apply stencil.
 
