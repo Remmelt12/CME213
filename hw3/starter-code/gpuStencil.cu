@@ -67,8 +67,9 @@ void gpuStencil(float* next,const float* curr, int gx, int nx, int ny,
     uint i = blockIdx.x*blockDim.x+threadIdx.x;
     uint j = blockIdx.y*blockDim.y+threadIdx.y;
 
-    if(i<nx&&j<ny){
-        uint index = i+nx*j;
+    uint bdr = (gx-nx)/2;
+    if(bdr<i && i<nx+bdr && bdr<j && j<ny+bdr){
+        uint index = i+gx*j;
         next[index]=Stencil<order>(&curr[index],gx,xcfl,ycfl);
     }
 
@@ -100,12 +101,12 @@ double gpuComputation(Grid& curr_grid, const simParams& params) {
     const int nx = params.nx();
     const int ny = params.ny();
 
-    const int gx = params.gx();
     const int order = params.order();
     dim3 threads(32, 6);
     dim3
         blocks((params.nx()+threads.x-1)/threads.x,(params.ny()+threads.y-1)/threads.y);
 
+    const int gx = params.gx();
     std::cout<<blocks.x <<std::endl; 
     event_pair timer;
     start_timer(&timer);
@@ -118,16 +119,16 @@ double gpuComputation(Grid& curr_grid, const simParams& params) {
         // TODO: Apply stencil.
         switch(order){
             case 2:
-                gpuStencil<2><<<blocks,threads>>>(next_grid.hGrid_.data(),
-                                        curr_grid.hGrid_.data(),gx,nx,ny,xcfl,ycfl); 
+                gpuStencil<2><<<blocks,threads>>>(next_grid.dGrid_,
+                                        curr_grid.dGrid_,gx,nx,ny,xcfl,ycfl); 
                 break;
             case 4:
-                gpuStencil<4><<<blocks,threads>>>(next_grid.hGrid_.data(),
-                                        curr_grid.hGrid_.data(),gx,nx,ny,xcfl,ycfl); 
+                gpuStencil<4><<<blocks,threads>>>(next_grid.dGrid_,
+                                        curr_grid.dGrid_,gx,nx,ny,xcfl,ycfl); 
                 break;
             case 8:
-                gpuStencil<8><<<blocks,threads>>>(next_grid.hGrid_.data(),
-                                        curr_grid.hGrid_.data(),gx,nx,ny,xcfl,ycfl); 
+                gpuStencil<8><<<blocks,threads>>>(next_grid.dGrid_,
+                                        curr_grid.dGrid_,gx,nx,ny,xcfl,ycfl); 
                 break;
         }
         check_launch("gpuStencil");
@@ -164,14 +165,17 @@ __global__
 void gpuStencilLoop(float* next, const float* curr, int gx, int nx, int ny,
                     float xcfl, float ycfl) {
     // TODO
-    /*
     uint i = blockIdx.x*blockDim.x+threadIdx.x;
-    uint j = blockIdx.y*blockDim.y+threadIdx.y;
-    uint index = i+gx*j;
+    uint j = (blockIdx.y*blockDim.y+threadIdx.y)*numYPerStep;
 
-    for(uint index=i+gx*j;index<nx*ny;i+=){
-        next[index]=Stencil<order>(curr[index],gx,xcfl,ycfl);
-    }*/
+    uint bdr = (gx-nx)/2;
+    if(bdr<i && i<nx+bdr){ 
+        for (uint rowid=j;rowid<j+numYPerStep;rowid++)
+            if(bdr<rowid && rowid<ny+bdr){ 
+                uint index = i+gx*rowid;
+                next[index]=Stencil<order>(&curr[index],gx,xcfl,ycfl);
+            }
+        }
 
 }
 
@@ -187,15 +191,25 @@ void gpuStencilLoop(float* next, const float* curr, int gx, int nx, int ny,
  * @returns Time required for computation.
  */
 double gpuComputationLoop(Grid& curr_grid, const simParams& params) {
-
     boundary_conditions BC(params);
 
     Grid next_grid(curr_grid);
     // TODO
     // TODO: Declare variables/Compute parameters.
-    dim3 threads(0, 0);
-    dim3 blocks(0, 0);
+    const float xcfl = params.xcfl();
+    const float ycfl = params.ycfl();
+    const int num_y_steps=32;
 
+
+    const int nx = params.nx();
+    const int ny = params.ny();
+
+    const int order = params.order();
+    dim3 threads(32, 6);
+    dim3
+        blocks((params.nx()+threads.x-1)/threads.x,(params.ny()+threads.y-1)/threads.y/num_y_steps);
+
+    const int gx = params.gx();
     event_pair timer;
     start_timer(&timer);
 
@@ -205,7 +219,20 @@ double gpuComputationLoop(Grid& curr_grid, const simParams& params) {
         BC.updateBC(next_grid.dGrid_, curr_grid.dGrid_);
 
         // TODO: Apply stencil.
-
+        switch(order){
+            case 2:
+                gpuStencilLoop<2,num_y_steps><<<blocks,threads>>>(next_grid.dGrid_,
+                                        curr_grid.dGrid_,gx,nx,ny,xcfl,ycfl); 
+                break;
+            case 4:
+                gpuStencilLoop<4,num_y_steps><<<blocks,threads>>>(next_grid.dGrid_,
+                                        curr_grid.dGrid_,gx,nx,ny,xcfl,ycfl); 
+                break;
+            case 8:
+                gpuStencilLoop<8,num_y_steps><<<blocks,threads>>>(next_grid.dGrid_,
+                                        curr_grid.dGrid_,gx,nx,ny,xcfl,ycfl); 
+                break;
+        }
         check_launch("gpuStencilLoop");
 
         Grid::swap(curr_grid, next_grid);

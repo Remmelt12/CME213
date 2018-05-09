@@ -36,16 +36,16 @@ echo Output from code
 echo ----------------
 
 # Using current params.in
-#./main -gsb
+./main -gsb
 
 # Setting different parameters
-size=4096
-order=8
+#size=4096
+#order=4
 
-echo "size = " $size "order of stencil = " $order
-sed -i "1s/.*/$size $size/" "params.in"
-sed -i "4s/.*/$order/" "params.in"
-./main -gbs
+#echo "size = " $size "order of stencil = " $order
+#sed -i "1s/.*/$size $size/" "params.in"
+#sed -i "4s/.*/$order/" "params.in"
+#./main -gsb
 
 # Run multiple cases
 #./runcases.sh
