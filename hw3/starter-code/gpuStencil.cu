@@ -262,7 +262,7 @@ void gpuShared(float* next, const float* curr, int gx, int gy,
     // TODO
     __shared__ float submesh[side*side];
     uint i = blockIdx.x*blockDim.x+threadIdx.x;
-    uint j = blockIdx.y*blockDim.y*side+threadIdx.y;
+    uint j = blockIdx.y*side+threadIdx.y;
 
     uint bdr = order/2;
 
@@ -277,16 +277,27 @@ void gpuShared(float* next, const float* curr, int gx, int gy,
     __syncthreads();
     
     uint x = blockIdx.x*blockDim.x+threadIdx.x;
-    uint y = blockIdx.y*blockDim.y*side+threadIdx.y;
+    uint y = blockIdx.y*side+threadIdx.y;
 
     int nx = gx-order;
     int ny = gy-order;
 
     for (uint k=0;k<side/blockDim.y;k++){
         if(bdr<y && y<ny && bdr<x && x<nx){ 
+            uint rowid =(threadIdx.y+k*blockDim.y);
             uint index = x+gx*y;
-            uint index_shared = threadIdx.x+side*(threadIdx.y+k*blockDim.y);
-            next[index]=Stencil<order>(&submesh[index_shared],side,xcfl,ycfl);
+            uint index_shared = threadIdx.x+side*rowid;
+            /*
+            if(bdr<threadIdx.x && threadIdx.x<side-bdr && bdr<rowid &&
+                            rowid<side-bdr)
+            */
+            if(false)
+            {
+                next[index]=Stencil<order>(&submesh[index_shared],side,xcfl,ycfl);
+            }
+            else{
+                next[index]=Stencil<order>(&curr[index],gx,xcfl,ycfl);
+            }
         }
         y+=blockDim.y;
     }    

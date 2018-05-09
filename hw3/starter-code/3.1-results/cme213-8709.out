@@ -1,0 +1,24 @@
+The master node of this job is gpu-200-2.stanford.edu
+This job runs on the following nodes:
+gpu-200-2
+Starting at Wed May  9 15:09:03 PDT 2018
+Running on hosts: gpu-200-2
+Running on 1 nodes.
+Running on 24 processors.
+Current working directory is ~/CME213/hw3/
+
+Output from code
+----------------
+Order: 4
+                     time (ms)     GBytes/sec
+            CPU          13187        20.3561
+128
+         Global        1307.21        205.351
+          Block         1123.2        238.991
+         Shared         1810.7        148.249
+
+                         L2Ref           LInf          L2Err
+         Global    1.25004e+06    7.21674e-07    5.39586e-08
+          Block    1.25004e+06    7.21674e-07    5.39586e-08
+         Shared    1.25004e+06    7.21674e-07    5.39621e-08
+
