@@ -262,7 +262,7 @@ void gpuShared(float* next, const float* curr, int gx, int gy,
     // TODO
     __shared__ float submesh[side*side];
     uint i = blockIdx.x*blockDim.x+threadIdx.x;
-    uint j = blockIdx.y*side+threadIdx.y;
+    uint j = blockIdx.y*blockDim.y*side+threadIdx.y;
 
     uint bdr = order/2;
 
@@ -277,7 +277,7 @@ void gpuShared(float* next, const float* curr, int gx, int gy,
     __syncthreads();
     
     uint x = blockIdx.x*blockDim.x+threadIdx.x;
-    uint y = blockIdx.y*side+threadIdx.y;
+    uint y = blockIdx.y*side*blockDim.y+threadIdx.y;
 
     int nx = gx-order;
     int ny = gy-order;
