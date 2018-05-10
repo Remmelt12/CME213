@@ -260,14 +260,15 @@ __global__
 void gpuShared(float* next, const float* curr, int gx, int gy,
                float xcfl, float ycfl) {
     // TODO
-    __shared__ float submesh[side*side];
-    uint i = blockIdx.x*blockDim.x+threadIdx.x;
-    uint j = blockIdx.y*blockDim.y*side+threadIdx.y;
+    uint i = blockIdx.x*(blockDim.x-order)+threadIdx.x;
+    uint j = blockIdx.y*(side-order)+threadIdx.y;
 
     uint bdr = order/2;
 
+    __shared__ float submesh[side*side];
+
     for(int k =0;k<side/blockDim.y;k++){
-        if(i<gx && j<gy){
+        if( i<gx  && j<gy){
             uint index = i+gx*j;
             uint index_shared = threadIdx.x+side*(threadIdx.y+k*blockDim.y);
             submesh[index_shared]=curr[index];
@@ -276,30 +277,27 @@ void gpuShared(float* next, const float* curr, int gx, int gy,
     }
     __syncthreads();
     
-    uint x = blockIdx.x*blockDim.x+threadIdx.x;
-    uint y = blockIdx.y*side*blockDim.y+threadIdx.y;
+    j = blockIdx.y*(side-order)+threadIdx.y;
+    /*
+    uint left = bdr;
+    uint right = side-bdr;
+    uint top = bdr;
+    uint bottom = side-bdr;
+    */
 
-    int nx = gx-order;
-    int ny = gy-order;
+    for (uint k=0;k<side/blockDim.y;k++)
+    {
+        if((j<gx-bdr && i<gx-bdr)&&
+            (bdr<=threadIdx.x && threadIdx.x<blockDim.x-bdr 
+            && bdr <= threadIdx.y && threadIdx.y <blockDim.y-bdr))
+        {
 
-    for (uint k=0;k<side/blockDim.y;k++){
-        if(bdr<y && y<ny && bdr<x && x<nx){ 
-            uint rowid =(threadIdx.y+k*blockDim.y);
-            uint index = x+gx*y;
-            uint index_shared = threadIdx.x+side*rowid;
-            /*
-            if(bdr<threadIdx.x && threadIdx.x<side-bdr && bdr<rowid &&
-                            rowid<side-bdr)
-            */
-            if(false)
-            {
-                next[index]=Stencil<order>(&submesh[index_shared],side,xcfl,ycfl);
-            }
-            else{
-                next[index]=Stencil<order>(&curr[index],gx,xcfl,ycfl);
-            }
+            uint index = i+gx*j;
+            uint index_shared = threadIdx.x+side*(threadIdx.y+k*blockDim.y);
+            next[index]=Stencil<order>(&submesh[index_shared],side,xcfl,ycfl);
+            
         }
-        y+=blockDim.y;
+        j+=blockDim.y;
     }    
 
 }
@@ -325,13 +323,13 @@ double gpuComputationShared(Grid& curr_grid, const simParams& params) {
     // TODO: Declare variables/Compute parameters.
     const float xcfl = params.xcfl();
     const float ycfl = params.ycfl();
-    const int side=32;
+    const int side=64;
 
 
     const int gx = params.gx();
     const int gy = params.gy();
 
-    dim3 threads(32, 8);
+    dim3 threads(64, 8);
     dim3
         blocks((gx+threads.x-1)/threads.x,(gy+side-1)/side);
 
