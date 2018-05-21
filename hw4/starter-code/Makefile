@@ -1,5 +1,5 @@
 CUD=nvcc
-CUDFLAGS=-O3 -arch=sm_20 
+CUDFLAGS=-O3 -std=c++11 --expt-extended-lambda -arch=sm_20 
 
 all: create_cipher solve_cipher
 
