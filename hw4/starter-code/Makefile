@@ -12,3 +12,4 @@ solve_cipher: solve_cipher.cu
 clean:
 	rm -f *.o *~ *~ create_cipher solve_cipher
 	rm -rf *.dSYM
+	rm -f *.err *.out
