@@ -16,6 +16,7 @@
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/execution_policy.h>
 #include <thrust/inner_product.h>
+#include <thrust/random.h>
 
 // You may include other thrust headers if necessary.
 
@@ -127,6 +128,7 @@ std::vector<double> getLetterFrequencyGpu(
     thrust::device_vector<unsigned char> keys(num_bins);
     thrust::device_vector<unsigned int> counts(num_bins);
     thrust::constant_iterator<double> size_inv(1.0/(double) sum_chars );
+    std::cout<< size_inv[0] <<std::endl; 
 
     thrust::reduce_by_key(data.begin(), data.end(),
                           size_inv,
@@ -139,6 +141,12 @@ std::vector<double> getLetterFrequencyGpu(
     thrust::copy(counts.begin(),counts.end(),freq_alpha_lower.begin());
 
     freq_alpha_lower.resize(min(static_cast<int>(freq_alpha_lower.size()), 5));
+
+	for(int i =0; i<freq_alpha_lower.size();i++)
+	{
+		std::cout<< keys[i]<<": "<< counts[i] <<std::endl; 	
+	}
+
 
     return freq_alpha_lower;
 }
@@ -188,6 +196,7 @@ int main(int argc, char** argv) {
 			text.end(),isnot_lowercase_alpha());
 
 
+	std::cout<< non_alpha <<std::endl; 
     numElements = text.size()-non_alpha; 
     text_clean.resize(numElements);
 
@@ -208,8 +217,9 @@ int main(int argc, char** argv) {
     // TODO fill in shifts using thrust random number generation (make sure
     // not to allow 0-shifts, this would make for rather poor encryption).
     
-    static thrust::random::default_random_engine rgn(123);
-    static thrust::random::uniform_int_distribution<int> gen(1,25);
+    static thrust::default_random_engine rng(123);
+    static thrust::uniform_int_distribution<int> gen(1,25);
+    for (unsigned int i = 0; i < period; ++i) shifts[i] = gen(rng);
 
 
     std::cout << "\nEncryption key: ";
@@ -228,6 +238,8 @@ int main(int argc, char** argv) {
     unsigned int* raw_ptr= thrust::raw_pointer_cast(shifts.data());
     
     apply_shift shift = apply_shift(raw_ptr , period);
+
+    //thrust::transform(device_cipher_text.begin(),device_cipher_text.end(),shift);
 
     thrust::host_vector<unsigned char> host_cipher_text = device_cipher_text;
 
