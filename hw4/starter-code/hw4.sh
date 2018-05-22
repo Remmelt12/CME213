@@ -42,4 +42,4 @@ cipher_period=11
 # Encrypt text
 ./create_cipher mobydick.txt $cipher_period
 # Decipher text
-./solve_cipher cipher_text.txt
+# ./solve_cipher cipher_text.txt

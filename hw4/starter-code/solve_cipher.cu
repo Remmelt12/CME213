@@ -9,6 +9,10 @@
 #include <thrust/inner_product.h>
 #include <thrust/iterator/constant_iterator.h>
 #include <thrust/extrema.h>
+#include <thrust/transform.h>
+#include <thrust/binary_search.h>
+#include <thrust/adjacent_difference.h>
+#include <thrust/iterator/counting_iterator.h>
 
 #include "strided_range_iterator.h"
 
@@ -18,7 +22,20 @@
 // this can be the same as in create_cipher.cu
 struct apply_shift : thrust::binary_function<unsigned char, int,
         unsigned char> {
-    // TODO
+
+    unsigned char operator()(unsigned char c, int position)
+    {
+        int key_pos=position % period_;
+        char shift = begin_[key_pos]-97;
+        return c+shift ; 
+    }
+
+    apply_shift(char* begin,unsigned int period): begin_(begin), period_(period) {}
+    
+    private:
+        char* begin_;
+        unsigned int period_;
+
 };
 
 int main(int argc, char** argv) {
@@ -61,13 +78,14 @@ int main(int argc, char** argv) {
         while(!found) {
             // TODO: Use thrust to compute the number of characters that match
             // when shifting text_clean by shift_idx.
+
+            auto equal=thrust::transform<>
             int numMatches = 0; // = ?  TODO
 
             double ioc = numMatches /
                          static_cast<double>((text_clean.size() - shift_idx) / 26.);
 
-            std::cout << "Period " << shift_idx << " ioc: " << ioc << std::endl;
-
+            std::cout << "Period " << shft_idx << " ioc: " << ioc << std::endl;
             if(ioc > 1.6) {
                 if(keyLength == 0) {
                     keyLength = shift_idx;

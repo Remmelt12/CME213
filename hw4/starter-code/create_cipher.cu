@@ -8,11 +8,14 @@
 #include <thrust/device_vector.h>
 #include <thrust/functional.h>
 #include <thrust/sort.h>
+#include <thrust/copy.h>
 #include <thrust/transform.h>
 #include <thrust/binary_search.h>
 #include <thrust/adjacent_difference.h>
 #include <thrust/iterator/constant_iterator.h>
 #include <thrust/iterator/counting_iterator.h>
+#include <thrust/execution_policy.h>
+#include <thrust/inner_product.h>
 
 // You may include other thrust headers if necessary.
 
@@ -31,6 +34,7 @@ struct isnot_lowercase_alpha : thrust::unary_function<unsigned char, bool> {
 // do not use the builtin C function or anything from boost, etc.
 struct upper_to_lower : thrust::unary_function<unsigned char, unsigned char> {
 
+    __host__ __device__ 
     unsigned char operator()(unsigned char c)
     {
         if(check_(c)){
@@ -48,17 +52,18 @@ struct upper_to_lower : thrust::unary_function<unsigned char, unsigned char> {
 // apply a shift with appropriate wrapping
 struct apply_shift : thrust::binary_function<unsigned char, int,
         unsigned char> {
+    __host__ __device__ 
     unsigned char operator()(unsigned char c, int position)
     {
         int key_pos=position % period_;
-        char shift = begin_[key_pos]-97;
+        char shift = begin_[key_pos];
         return c+shift ; 
     }
 
-    apply_shift(char* begin,unsigned int period): begin_(begin), period_(period) {}
+    apply_shift(unsigned int* begin,unsigned int period): begin_(begin), period_(period) {}
     
     private:
-        char* begin_;
+        unsigned int* begin_;
         unsigned int period_;
 
 };
@@ -99,56 +104,41 @@ std::vector<double> getLetterFrequencyGpu(
 
     std::vector<double> freq_alpha_lower;
     
-    unsigned int sum_chars = 0;
+    unsigned int sum_chars = text.size();
 
     // WARNING: make sure you handle the case of not all letters appearing
     // in the text.
 
-
-    // TODO calculate letter frequency
+    // calculate letter frequency
     // copy input data 
     thrust::device_vector<unsigned char> data(text);
-    thrust::device_vector<unsigned int> freq;
 
     // sort data to bring equal elements together
     thrust::sort(data.begin(), data.end());
 
     // number of freq bins is equal to the maximum
     // value plus one
-    unsigned int num_bins = data.back() + 1;
+    unsigned int num_bins = thrust::inner_product(data.begin(), data.end() - 1,
+                                                data.begin() + 1,
+                                                1,
+                                                thrust::plus<int>(),
+                                                thrust::not_equal_to<int>());
 
-    // resize freq storage
-    freq.resize(num_bins);
+    thrust::device_vector<unsigned char> keys(num_bins);
+    thrust::device_vector<unsigned int> counts(num_bins);
+    thrust::constant_iterator<double> size_inv(1.0/(double) sum_chars );
+
+    thrust::reduce_by_key(data.begin(), data.end(),
+                          size_inv,
+                          keys.begin(),
+                          counts.begin());
+
+    thrust::sort_by_key(counts.begin(),counts.end(),keys.begin(),thrust::greater<double>());
+
     freq_alpha_lower.resize(num_bins);
+    thrust::copy(counts.begin(),counts.end(),freq_alpha_lower.begin());
 
-    // find the end of each bin of values
-    thrust::counting_iterator<unsigned int> search_begin(0);
-    thrust::upper_bound(data.begin(),data.end(),
-                        search_begin,search_begin + num_bins,
-                        freq.begin());
-
-    // compute the freq by taking
-    // differences of the cumulative
-    // freq
-    thrust::adjacent_difference(freq.begin(),
-                                freq.end(),
-                                freq.begin());
-
-    // print the freq
-    sum_chars=thrust::reduce(freq.begin(),freq.end());
-
-    for(unsigned char c = 'a'; c <= 'z'; ++c) {
-        if(freq[c] > 0) {
-            freq_alpha_lower.push_back(freq[c] / static_cast<double>(sum_chars));
-        }
-    }
-
-    /*
-    thrust::transform(freq.begin(),freq.end(),freq_alpha_lower,[=]__host__
-            __device__ (unsigned int i) double {return ((double) i)/((double)
-                sum_chars) });
-    */
-    thrust::sort(freq_alpha_lower.begin(),freq_alpha_lower.end(),thrust::greater<double>());
+    freq_alpha_lower.resize(min(static_cast<int>(freq_alpha_lower.size()), 5));
 
     return freq_alpha_lower;
 }
@@ -186,6 +176,7 @@ int main(int argc, char** argv) {
     ifs.close();
 
     thrust::device_vector<unsigned char> text_clean;
+    thrust::device_vector<unsigned char> device_text(text);
     // TODO: sanitize input to contain only a-z lowercase (use the
     // isnot_lowercase_alpha functor), calculate the number of characters
     // in the cleaned text and put the result in text_clean, make sure to
@@ -193,18 +184,19 @@ int main(int argc, char** argv) {
 
 
     int numElements =-1;
-    numElements = text.size() - thrust::reduce(
-			thrust::make_transform_iterator(text.begin(),isnot_lowercase_alpha()),
-			thrust::make_transform_iterator(text.end(),isnot_lowercase_alpha()));
+    int non_alpha = thrust::count_if(text.begin(),
+			text.end(),isnot_lowercase_alpha());
 
+
+    numElements = text.size()-non_alpha; 
     text_clean.resize(numElements);
 
     upper_to_lower cast= upper_to_lower();
-    thrust::copy_if(thrust::make_transform_iterator(text.begin(),cast),
-                    thrust::make_transform_iterator(text.end(),cast),
+    thrust::copy_if(thrust::make_transform_iterator(device_text.begin(),cast),
+                    thrust::make_transform_iterator(device_text.end(),cast),
+                    text_clean.begin(),
                     isnot_lowercase_alpha());
 
-    
     std::cout << "\nBefore ciphering!" << std::endl << std::endl;
     std::vector<double> letterFreqGpu = getLetterFrequencyGpu(text_clean);
     std::vector<double> letterFreqCpu = getLetterFrequencyCpu(text);
@@ -215,6 +207,9 @@ int main(int argc, char** argv) {
     thrust::device_vector<unsigned int> shifts(period);
     // TODO fill in shifts using thrust random number generation (make sure
     // not to allow 0-shifts, this would make for rather poor encryption).
+    
+    static thrust::random::default_random_engine rgn(123);
+    static thrust::random::uniform_int_distribution<int> gen(1,25);
 
 
     std::cout << "\nEncryption key: ";
@@ -229,6 +224,10 @@ int main(int argc, char** argv) {
 
     // TODO: Apply the shifts to text_clean and place the result in
     // device_cipher_text.
+    
+    unsigned int* raw_ptr= thrust::raw_pointer_cast(shifts.data());
+    
+    apply_shift shift = apply_shift(raw_ptr , period);
 
     thrust::host_vector<unsigned char> host_cipher_text = device_cipher_text;
 
