@@ -57,15 +57,18 @@ struct apply_shift : thrust::binary_function<unsigned char, int,
     unsigned char operator()(unsigned char c, int position)
     {
         int key_pos=position % period_;
-        char shift = begin_[key_pos];
-        return c+shift ; 
+        unsigned char shift = begin_[key_pos];
+        unsigned char new_shift = ((c-97)+shift) % 24;
+
+        return c+new_shift ; 
     }
 
-    apply_shift(unsigned int* begin,unsigned int period): begin_(begin), period_(period) {}
+    apply_shift(thrust::device_ptr<unsigned int> begin,unsigned int period): 
+        begin_(begin), period_(period) {}
     
     private:
-        unsigned int* begin_;
-        unsigned int period_;
+    thrust::device_ptr<unsigned int> begin_;
+    unsigned int period_;
 
 };
 
@@ -238,17 +241,14 @@ int main(int argc, char** argv) {
     // TODO: Apply the shifts to text_clean and place the result in
     // device_cipher_text.
     
-    //thrust::device_ptr<unsigned int> p = &(shifts[0]);
-
-    unsigned int * raw_p = thrust::raw_pointer_cast(shifts);
+    thrust::device_ptr<unsigned int> p = &(shifts[0]);
     
-    apply_shift shift = apply_shift(raw_p , period);
+    apply_shift shift = apply_shift(p , period);
 
     thrust::transform(text_clean.begin(),
                       text_clean.end(),
                       thrust::make_counting_iterator(static_cast<int>(0)),
                       device_cipher_text.begin(),
-                      device_cipher_text.end(),
                       shift);
 
     thrust::host_vector<unsigned char> host_cipher_text = device_cipher_text;
