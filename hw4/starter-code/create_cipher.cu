@@ -58,9 +58,13 @@ struct apply_shift : thrust::binary_function<unsigned char, int,
     {
         int key_pos=position % period_;
         unsigned char shift = begin_[key_pos];
-        unsigned char new_shift = ((c-97)+shift) % 24;
+        if(c+shift>'z'){
+            return 'a'+((c+shift) % 123);
+        }
+        else{
+            return c+shift;
+        }
 
-        return c+new_shift ; 
     }
 
     apply_shift(thrust::device_ptr<unsigned int> begin,unsigned int period): 
@@ -147,7 +151,7 @@ std::vector<double> getLetterFrequencyGpu(
 
 	for(int i =0; i<freq_alpha_lower.size();i++)
 	{
-		std::cout<< keys[i]<<": "<< counts[i] <<std::endl; 	
+		std::cout<< keys[i]<<": "<< freq_alpha_lower[i] <<std::endl; 	
 	}
 
 
