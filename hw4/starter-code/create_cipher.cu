@@ -57,9 +57,9 @@ struct apply_shift : thrust::binary_function<unsigned char, int,
     unsigned char operator()(unsigned char c, int position)
     {
         int key_pos=position % period_;
-        unsigned char shift = begin_[key_pos];
+        int shift = begin_[key_pos];
         if(c+shift>'z'){
-            return 'a'+((c+shift) % 123);
+            return 'a'+((c+shift) - 123);
         }
         else{
             return c+shift;

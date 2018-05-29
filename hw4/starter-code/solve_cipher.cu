@@ -27,12 +27,14 @@ struct apply_shift : thrust::binary_function<unsigned char, int,
     unsigned char operator()(unsigned char c, int position)
     {
         int key_pos=position % period_;
-        unsigned char shift = begin_[key_pos];
+        int shift = begin_[key_pos];
+        
         if(c+shift>'z'){
-            return 'a'+((c+shift) % 123);
+            return 'a'+(c+shift - 123);
         }
-		else if(c+shift<'a'){
-            return 'z'+((c+shift) % 96);
+        
+		if(c+shift<'a'){
+            return 'z'+(c+shift-96);
 		
 		} 
         else{
@@ -49,6 +51,7 @@ struct apply_shift : thrust::binary_function<unsigned char, int,
 
 };
 
+/*
 thrust::device_vector<unsigned char> getLetterFrequencyGpu(
     thrust::device_vector<unsigned char>& text) {
 
@@ -59,9 +62,6 @@ thrust::device_vector<unsigned char> getLetterFrequencyGpu(
     // WARNING: make sure you handle the case of not all letters appearing
     // in the text.
 
-    // calculate letter frequency
-    // copy input data 
-    thrust::device_vector<unsigned char> data=text;
 
     // sort data to bring equal elements together
     thrust::sort(data.begin(), data.end());
@@ -94,7 +94,7 @@ thrust::device_vector<unsigned char> getLetterFrequencyGpu(
 
     return keys;
 }
-
+*/
 
 int main(int argc, char** argv) {
     if(argc != 2) {
@@ -188,18 +188,30 @@ int main(int argc, char** argv) {
 		strided_range<Iterator> stride_it(text_copy.begin()+i, text_copy.end(),
 				keyLength);
 
-	
-		thrust::device_vector<unsigned char>
-			sub_text((text_copy.size()+keyLength-1)/keyLength);
+        // sort data to bring equal elements together
+        thrust::sort(stride_it.begin(),stride_it.end());
 
-		thrust::copy(stride_it.begin(),
-					stride_it.end(),
-					sub_text.begin()); 	
-		thrust::device_vector<unsigned char>
-			freq=getLetterFrequencyGpu(stride_it);
+        // number of freq bins is equal to the maximum
+        // value plus one
+        unsigned int num_bins =
+            thrust::inner_product(thrust::device,stride_it.begin(), stride_it.end() - 1,
+                                                    stride_it.begin() + 1,
+                                                    1,
+                                                    thrust::plus<int>(),
+                                                    thrust::not_equal_to<int>());
 
+        thrust::device_vector<unsigned char> keys(num_bins);
+        thrust::device_vector<double> counts(num_bins);
 
-		dShifts[i]= 'e'-freq[0] ;
+        thrust::reduce_by_key(thrust::device,stride_it.begin(), stride_it.end(),
+                              thrust::constant_iterator<int>(1),
+                              keys.begin(),
+                              counts.begin());
+
+        unsigned int index =
+            thrust::max_element(counts.begin(),counts.end())-counts.begin();
+
+		dShifts[i]= 'e'- keys[index];
 	
 	}
 
@@ -219,8 +231,8 @@ int main(int argc, char** argv) {
     
     apply_shift shift = apply_shift(p , keyLength);
 
-    thrust::transform(text_copy.begin(),
-                      text_copy.end(),
+    thrust::transform(text_clean.begin(),
+                      text_clean.end(),
                       thrust::make_counting_iterator(static_cast<int>(0)),
                       text_clean.begin(),
                       shift);
