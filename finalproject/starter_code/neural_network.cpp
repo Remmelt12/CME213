@@ -323,39 +323,103 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
              * 4. update local network coefficient at each node
              */
             int pN = batch_size/num_procs;
-            int pK = nn.H[0];
-            int pM = nn.H[1];
 
-            double* dW;
-            cudaMalloc((void**)&dW, sizeof(double) * pM * pK);
+            //std::cout<< "Got here."<<std::endl; 
+            double* dW0;
+            cudaMalloc((void**)&dW0, sizeof(double) * nn.H[1] * nn.H[0]);
             double* dX;
-            cudaMalloc((void**)&dX, sizeof(double) * pM * pN);
-            double* dB;
-            cudaMalloc((void**)&dB, sizeof(double) * pM * pK);
+            cudaMalloc((void**)&dX, sizeof(double) * nn.H[0] * pN);
+            double* dB0;
+            cudaMalloc((void**)&dB0, sizeof(double) * nn.H[1] * pN);
 
             double alpha=1.0;
-            cudaMemcpy(dX, X.memptr(), sizeof(double) * pK * pN, cudaMemcpyHostToDevice);
-            cudaMemcpy(dW, nn.W[0].memptr(), sizeof(double) * pK * pN, cudaMemcpyHostToDevice);
-            cudaMemcpy(dB, nn.b[0].memptr(), sizeof(double) * pM * pN, cudaMemcpyHostToDevice);
+            cudaMemcpy(dX, X.memptr(), sizeof(double) * nn.H[0] * pN, cudaMemcpyHostToDevice);
+            cudaMemcpy(dW0, nn.W[0].memptr(), sizeof(double) * nn.H[1] * nn.H[0], cudaMemcpyHostToDevice);
+            cudaMemcpy(dB0, nn.b[0].memptr(), sizeof(double) * nn.H[1] * pN, cudaMemcpyHostToDevice);
 
-            myGEMM(dW,dX,dB,&alpha,&alpha,pM,pN,pK);
-            sigmoid_p(dB,dB,pM,pN);
+            myGEMM(dW0,dX,dB0,&alpha,&alpha,nn.H[1],pN,nn.H[0]);
+            //std::cout<< "Got here2."<<std::endl; 
+            sigmoid_p(dB0,dB0,nn.H[1],pN);
+            //std::cout<< "Got here3."<<std::endl; 
 
-            pK = nn.H[1];
-            pM = nn.H[2];
 
-            double* dB2;
-            cudaMalloc((void**)&dB2, sizeof(double) * pM * pN);
+            double* dB1;
+            cudaMalloc((void**)&dB1, sizeof(double) * nn.H[1] * pN);
+            //std::cout<< "Got here4."<<std::endl; 
 
-            double* dW2;
-            cudaMalloc((void**)&dW2, sizeof(double) * pM * pK);
+            double* dW1;
+            cudaMalloc((void**)&dW1, sizeof(double) * nn.H[2] * nn.H[1]);
 
-            cudaMemcpy(dW2, nn.W[1].memptr(), sizeof(double) * pK * pN, cudaMemcpyHostToDevice);
-            cudaMemcpy(dB2, nn.b[1].memptr(), sizeof(double) * pM * pN, cudaMemcpyHostToDevice);
+            cudaMemcpy(dW1, nn.W[1].memptr(), sizeof(double) * nn.H[1] * pN, cudaMemcpyHostToDevice);
+            cudaMemcpy(dB1, nn.b[1].memptr(), sizeof(double) * nn.H[2] * pN, cudaMemcpyHostToDevice);
 
-            myGEMM(dW2,dB,dB2,&alpha,&alpha,pM,pN,pK);
+            //std::cout<< "Got here5."<<std::endl; 
+            myGEMM(dW1,dB0,dB1,&alpha,&alpha,nn.H[2],pN,nn.H[1]);
             
-            softmax_p(dB2,db2,pM,pN);
+            double* dY;
+            cudaMalloc((void**)&dY, sizeof(double) * nn.H[2] * pN);
+
+            //std::cout<< "Got here6."<<std::endl; 
+            softmax_p(dB1,dY,nn.H[2],pN);
+
+            /*
+            cudaFree(dW2); 
+            cudaFree(dB0); 
+            cudaFree(dX);
+            */
+
+            double* dYc;
+            cudaMalloc((void**)&dYc, sizeof(double) * nn.H[2] * pN);
+            cudaMemcpy(dYc, y.memptr(), sizeof(double) * nn.H[2] * pN, cudaMemcpyHostToDevice);
+
+            double* dOnes;
+            double* dOnes2;
+            double* dEye;
+            double* dA0;
+            double* dZ1;
+            double* dDB0;
+            double* dDB1;
+
+            cudaMalloc((void**)&dDB1, sizeof(double) * nn.H[2] * 1);
+            cudaMalloc((void**)&dDB0, sizeof(double) * nn.H[1] * 1);
+
+            cudaMalloc((void**)&dZ1, sizeof(double) * nn.H[1] * pN);
+
+            arma::mat Ones = arma::ones<arma::mat>(nn.H[2],nn.H[2]);
+            cudaMalloc((void**)&dOnes, sizeof(double) * nn.H[2] * nn.H[2]);
+            cudaMemcpy(dOnes, Ones.memptr(), sizeof(double) * nn.H[2] * nn.H[2], cudaMemcpyHostToDevice);
+            arma::mat Ones2 = arma::ones<arma::mat>(nn.H[1],pN);
+            cudaMalloc((void**)&dOnes2, sizeof(double) * nn.H[1] * pN);
+            cudaMemcpy(dOnes2, Ones2.memptr(), sizeof(double) * nn.H[1] * pN, cudaMemcpyHostToDevice);
+            arma::mat Eye = arma::eye<arma::mat>(nn.H[1],nn.H[1]);
+            cudaMalloc((void**)&dEye, sizeof(double) * nn.H[1] * nn.H[1]);
+            cudaMemcpy(dEye, Eye.memptr(), sizeof(double) * nn.H[1] * nn.H[1], cudaMemcpyHostToDevice);
+
+            cudaMalloc((void**)&dA0, sizeof(double) * nn.H[1] * pN);
+            cudaMemcpy(dA0, dB0, sizeof(double) * nn.H[1] * pN, cudaMemcpyDeviceToDevice);
+
+            alpha =1.0/N;
+            double beta =-1.0/N;
+            myGEMM(dOnes,dYc,dY,&alpha,&beta,nn.H[2],pN,nn.H[2]);
+
+            alpha =1.0;
+            myGEMM(dY,dB0,dW1,&alpha,&reg,nn.H[2],pN,nn.H[1],false,true);
+
+            row_sum(dY,dDB1,nn.H[2],nn.H[1]);
+
+            beta=0.0;
+            myGEMM(dW1,dY,dYc, &alpha, &beta,nn.H[2],N,nn.H[1],true,false);
+
+            beta=-1.0;
+            myGEMM(dEye,dOnes,dA0,&alpha,&beta,nn.H[1],pN,nn.H[1]);
+
+            elem_mult(dA0,dB0,dA0,nn.H[1],pN);
+            elem_mult(dYc,dA0,dZ1,nn.H[1],pN);
+
+            myGEMM(dZ1,dX,dW0,&alpha,&reg,nn.H[1],pN,nn.H[0],false,true);
+
+            row_sum(dZ1,dB0,nn.H[1],pN);
+
 
 
             if(print_every <= 0) {

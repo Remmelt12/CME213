@@ -206,11 +206,9 @@ void TestGEMM(int M, int N, int K) {
 
     /* We are calling your GEMM function here */
     /* We will make one dummy call and check_launch here */
-    std::cout<< "Got here"<<std::endl; 
     int err;
     err = myGEMM(dA, dB, dummy, &alpha, &beta, M, N, K);
     check_launch("myGEMM dummy");
-    std::cout<< "Got here as well."<<std::endl; 
 
     double mystart = MPI_Wtime();
 
