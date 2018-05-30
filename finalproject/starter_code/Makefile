@@ -37,6 +37,7 @@ gpu_func.o: gpu_func.cu
 
 clean:
 	rm -rf $(OBJDIR)/*.o main
+	rm -f *.err *.out
 
 clear:
 	rm -rf  cme213.* 

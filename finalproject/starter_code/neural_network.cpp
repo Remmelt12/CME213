@@ -300,6 +300,8 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
     error_file.open("Outputs/CpuGpuDiff.txt");
     int print_flag = 0;
 
+    // std::cout << W[0].n_rows << "\n";tw
+
     /* HINT: You can obtain a raw pointer to the memory used by Armadillo Matrices
        for storing elements in a column major way. Or you can allocate your own array
        memory space and store the elements in a row major way. Remember to update the
@@ -320,6 +322,41 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
              * 3. reduce the coefficient updates and broadcast to all nodes with `MPI_Allreduce()'
              * 4. update local network coefficient at each node
              */
+            int pN = batch_size/num_procs;
+            int pK = nn.H[0];
+            int pM = nn.H[1];
+
+            double* dW;
+            cudaMalloc((void**)&dW, sizeof(double) * pM * pK);
+            double* dX;
+            cudaMalloc((void**)&dX, sizeof(double) * pM * pN);
+            double* dB;
+            cudaMalloc((void**)&dB, sizeof(double) * pM * pK);
+
+            double alpha=1.0;
+            cudaMemcpy(dX, X.memptr(), sizeof(double) * pK * pN, cudaMemcpyHostToDevice);
+            cudaMemcpy(dW, nn.W[0].memptr(), sizeof(double) * pK * pN, cudaMemcpyHostToDevice);
+            cudaMemcpy(dB, nn.b[0].memptr(), sizeof(double) * pM * pN, cudaMemcpyHostToDevice);
+
+            myGEMM(dW,dX,dB,&alpha,&alpha,pM,pN,pK);
+            sigmoid_p(dB,dB,pM,pN);
+
+            pK = nn.H[1];
+            pM = nn.H[2];
+
+            double* dB2;
+            cudaMalloc((void**)&dB2, sizeof(double) * pM * pN);
+
+            double* dW2;
+            cudaMalloc((void**)&dW2, sizeof(double) * pM * pK);
+
+            cudaMemcpy(dW2, nn.W[1].memptr(), sizeof(double) * pK * pN, cudaMemcpyHostToDevice);
+            cudaMemcpy(dB2, nn.b[1].memptr(), sizeof(double) * pM * pN, cudaMemcpyHostToDevice);
+
+            myGEMM(dW2,dB,dB2,&alpha,&alpha,pM,pN,pK);
+            
+            softmax_p(dB2,db2,pM,pN);
+
 
             if(print_every <= 0) {
                 print_flag = batch == 0;

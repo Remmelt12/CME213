@@ -4,6 +4,10 @@
 #include <helper_functions.h>
 #include <iostream>
 #include "cublas_v2.h"
+#include <math.h>
+
+#define BLOCK_SIZE 16
+
 
 __global__
 void device_add_one(int* d_result, int t) {
@@ -35,9 +39,73 @@ int useless_gpu_add_one(int t) {
 /*
 Routine to perform an in-place GEMM operation, i.e., C := alpha*A*B + beta*C
 */
-int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
-           int N, int K) {
-    /* TODO: Write an efficient GEMM implementation on GPU */
 
-    return 1;
+__global__
+void myGEMMkernel(double* A, double* B, double* C, double alpha, double beta, int M,
+           int N, int K) 
+{
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    double inner_prod=0.0;
+    if(row<M&&col<N){
+        for(int k = 0; k<K; k++){
+            int indexA = (k*M)+row;
+            int indexB = (col*K)+k;
+            inner_prod+=A[indexA]*B[indexB];
+        }
+        C[col*M+row] =alpha*inner_prod+beta*C[col*M+row];
+    }
 }
+
+int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
+           int N, int K) 
+{
+    /* TODO: Write an efficient GEMM implementation on GPU */
+    dim3 dimBlock(32,32);
+    dim3 dimGrid((N+BLOCK_SIZE-1)/dimBlock.x, (M+BLOCK_SIZE-1)/dimBlock.y);
+    myGEMMkernel<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K);
+
+    return 0;
+}
+
+__global__
+void softmax_kernel(const double* Z, double* A,int M, int N)
+{
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    double denom = 0.0;
+    for (int i =0;i<M;i++)
+    {
+        denom+=std::exp(Z[col*M+i]);
+    }
+    for (int i =0;i<M;i++)
+    {
+        A[col*M+i]=std::exp(Z[col*M+i])/denom;
+    }
+}
+
+void softmax_p(const double* Z, double* A,int M, int N)
+{
+    dim3 dimBlock(BLOCK_SIZE);
+    dim3 dimGrid((N+BLOCK_SIZE-1)/dimBlock.x);
+    softmax_kernel<<<dimGrid,dimBlock>>>(Z,A,M,N);
+
+}
+
+__global__
+void sigmoid_kernel(const double* Z, double* A,int M,int N)
+{
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if(row<M&&col<N)
+    {
+        A[M*col+row]=1.0/(1.0+std::exp(-Z[M*col+row]));
+    }
+}
+
+void sigmoid_p(const double* Z, double* A,int M, int N)
+{
+    dim3 dimBlock(32);
+    dim3 dimGrid((N+BLOCK_SIZE-1)/dimBlock.x, (M+BLOCK_SIZE-1)/dimBlock.y);
+    sigmoid_kernel<<<dimGrid,dimBlock>>>(Z,A,M,N);
+}
+

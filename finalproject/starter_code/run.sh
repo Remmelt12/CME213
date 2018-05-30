@@ -10,13 +10,13 @@
 #SBATCH --output=cme213-%j.out
 #SBATCH --error=cme213-%j.err
 
-echo "In file run.sh, update the line below before running the script"
-echo "WORKDIR='<directory with your code>'"
-exit 0
+#echo "In file run.sh, update the line below before running the script"
+#echo "WORKDIR='<directory with your code>'"
+#exit 0
 
 # Comment the 3 lines above after setting WORKDIR
 
-WORKDIR='<directory with your code>'
+WORKDIR='./'
 export WORKDIR
 
 ### ---------------------------------------
@@ -36,4 +36,4 @@ echo Output from code
 echo ----------------
 
 # mpirun -np 4 ./main -s -n 1000 -b 800 -l 0.01 -e 20
-mpirun -np 4 ./main -g 1
+mpirun -np 1 ./main -g 4
