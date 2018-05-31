@@ -295,6 +295,9 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
 
     int N = (rank == 0)?X.n_cols:0;
     MPI_SAFE_CALL(MPI_Bcast(&N, 1, MPI_INT, 0, MPI_COMM_WORLD));
+    arma x_sub = arma::zeros<arma::mat>(nn.H[1],nn.H[0])
+
+    MPI_Scatter(x,N/batch_size,MPI_DOUBLE,)
 
     std::ofstream error_file;
     error_file.open("Outputs/CpuGpuDiff.txt");
@@ -311,8 +314,17 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
        and therefore goes from 0 to epochs*num_batches */
     int iter = 0;
 
+    arma::mat hdW0=arma::zeros<arma::mat>(nn.H[1],nn.H[0]);
+
+    arma::mat hdW1=arma::zeros<arma::mat>(nn.H[2],nn.H[1]);
+
+    arma::mat hdb0=arma::zeros<arma::mat>(nn.H[1],1);
+    
+    arma::mat hdb1=arma::zeros<arma::mat>(nn.H[2],1);
+
     for(int epoch = 0; epoch < epochs; ++epoch) {
         int num_batches = (N + batch_size - 1)/batch_size;
+        std::cout<< nn.W[0][1]<<std::endl; 
 
         for(int batch = 0; batch < num_batches; ++batch) {
             /*
@@ -323,6 +335,8 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
              * 4. update local network coefficient at each node
              */
             int pN = batch_size/num_procs;
+            arma::mat X_batch = x.cols(batch * batch_size, last_col);
+            arma::mat y_batch = y.cols(batch * batch_size, last_col);
 
             //std::cout<< "Got here."<<std::endl; 
             double* dW0;
@@ -333,7 +347,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             cudaMalloc((void**)&dB0, sizeof(double) * nn.H[1] * pN);
 
             double alpha=1.0;
-            cudaMemcpy(dX, X.memptr(), sizeof(double) * nn.H[0] * pN, cudaMemcpyHostToDevice);
+            cudaMemcpy(dX, X_batch.memptr(), sizeof(double) * nn.H[0] * pN, cudaMemcpyHostToDevice);
             cudaMemcpy(dW0, nn.W[0].memptr(), sizeof(double) * nn.H[1] * nn.H[0], cudaMemcpyHostToDevice);
             cudaMemcpy(dB0, nn.b[0].memptr(), sizeof(double) * nn.H[1] * pN, cudaMemcpyHostToDevice);
 
@@ -362,15 +376,9 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             //std::cout<< "Got here6."<<std::endl; 
             softmax_p(dB1,dY,nn.H[2],pN);
 
-            /*
-            cudaFree(dW2); 
-            cudaFree(dB0); 
-            cudaFree(dX);
-            */
-
             double* dYc;
             cudaMalloc((void**)&dYc, sizeof(double) * nn.H[2] * pN);
-            cudaMemcpy(dYc, y.memptr(), sizeof(double) * nn.H[2] * pN, cudaMemcpyHostToDevice);
+            cudaMemcpy(dYc, y_batch.memptr(), sizeof(double) * nn.H[2] * pN, cudaMemcpyHostToDevice);
 
             double* dOnes;
             double* dOnes2;
@@ -411,7 +419,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             myGEMM(dW1,dY,dYc, &alpha, &beta,nn.H[2],N,nn.H[1],true,false);
 
             beta=-1.0;
-            myGEMM(dEye,dOnes,dA0,&alpha,&beta,nn.H[1],pN,nn.H[1]);
+            myGEMM(dEye,dOnes2,dA0,&alpha,&beta,nn.H[1],pN,nn.H[1]);
 
             elem_mult(dA0,dB0,dA0,nn.H[1],pN);
             elem_mult(dYc,dA0,dZ1,nn.H[1],pN);
@@ -421,6 +429,27 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             row_sum(dZ1,dB0,nn.H[1],pN);
 
 
+            cudaMemcpy(hdW0.memptr(),dW0,sizeof(double)*nn.H[1]*nn.H[0],cudaMemcpyDeviceToHost);
+            cudaMemcpy(hdW1.memptr(),dW1,sizeof(double)*nn.H[2]*nn.H[1],cudaMemcpyDeviceToHost);
+            cudaMemcpy(hdb0.memptr(),dB0,sizeof(double)*nn.H[1]*1,cudaMemcpyDeviceToHost);
+            cudaMemcpy(hdb1.memptr(),dB1,sizeof(double)*nn.H[2]*1,cudaMemcpyDeviceToHost);
+            
+            cudaFree(dW0);
+            cudaFree(dW1);
+            cudaFree(dB0);
+            cudaFree(dB1);
+            cudaFree(dY);
+            cudaFree(dYc);
+            cudaFree(dEye);
+            cudaFree(dOnes);
+            cudaFree(dOnes2);
+            cudaFree(dZ1);
+            cudaFree(dX);
+
+            nn.W[0] = arma::ones<arma::mat>(nn.H[1],nn.H[0]) ;
+            nn.W[1]-= learning_rate * hdW1;
+            nn.b[0]-= learning_rate * hdb0;
+            nn.b[1]-= learning_rate * hdb1;
 
             if(print_every <= 0) {
                 print_flag = batch == 0;
