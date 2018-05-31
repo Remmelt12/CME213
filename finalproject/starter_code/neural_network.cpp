@@ -350,6 +350,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
         std::cout<< nn.W[0][1]<<std::endl; 
 
         for(int batch = 0; batch < num_batches; ++batch) {
+			std::cout<< batch <<std::endl; 
             /*
              * Possible Implementation:
              * 1. subdivide input batch of images and `MPI_scatter()' to each MPI node
@@ -363,8 +364,8 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             arma::mat X_batch = X.cols(batch * batch_size, last_col);
             arma::mat y_batch = y.cols(batch * batch_size, last_col);
 
-            //MPI_Scatter(X_batch.memptr(),batch_size/num_procs,MPI_DOUBLE,x_sub,batch_size/num_procs,MPI_DOUBLE,0,MPI_COMM_WORLD);
-            //MPI_Scatter(y_batch.memptr(),batch_size/num_procs,MPI_DOUBLE,y_sub,batch_size/num_procs,MPI_DOUBLE,0,MPI_COMM_WORLD);
+            MPI_Scatter(X_batch.memptr(),batch_size/num_procs,MPI_DOUBLE,x_sub,batch_size/num_procs,MPI_DOUBLE,0,MPI_COMM_WORLD);
+            MPI_Scatter(y_batch.memptr(),batch_size/num_procs,MPI_DOUBLE,y_sub,batch_size/num_procs,MPI_DOUBLE,0,MPI_COMM_WORLD);
 
             //std::cout<< "Got here."<<std::endl; 
             double* dW0;
@@ -375,7 +376,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             cudaMalloc((void**)&dB0, sizeof(double) * nn.H[1] * pN);
 
             double alpha=1.0;
-            cudaMemcpy(dX, X_batch.memptr(), sizeof(double) * nn.H[0] * pN, cudaMemcpyHostToDevice);
+            cudaMemcpy(dX, x_sub, sizeof(double) * nn.H[0] * pN, cudaMemcpyHostToDevice);
             cudaMemcpy(dW0, nn.W[0].memptr(), sizeof(double) * nn.H[1] * nn.H[0], cudaMemcpyHostToDevice);
             cudaMemcpy(dB0, nn.b[0].memptr(), sizeof(double) * nn.H[1] * pN, cudaMemcpyHostToDevice);
 
@@ -406,7 +407,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
 
             double* dYc;
             cudaMalloc((void**)&dYc, sizeof(double) * nn.H[2] * pN);
-            cudaMemcpy(dYc, y_batch.memptr(), sizeof(double) * nn.H[2] * pN, cudaMemcpyHostToDevice);
+            cudaMemcpy(dYc, y_sub, sizeof(double) * nn.H[2] * pN, cudaMemcpyHostToDevice);
 
             double* dOnes;
             double* dOnes2;
@@ -462,17 +463,17 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             cudaMemcpy(hdb0_l,dB0,sizeof(double) * nn.H[1] * 1, cudaMemcpyDeviceToHost);
             cudaMemcpy(hdb1_l,dB1,sizeof(double) * nn.H[1] * 1, cudaMemcpyDeviceToHost);
             
-
-            //MPI_Allreduce(hdw0_l,hdw0,nn.H[1] * nn.H[0],MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
-            //MPI_Allreduce(hdw1_l,hdw1,nn.H[2] * nn.H[1],MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
-            //MPI_Allreduce(hdb0_l,hdb0,nn.H[1],MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
-            //MPI_Allreduce(hdb1_l,hdb1,nn.H[2],MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
-
-            /*
-            arma::mat temp_hdw0(nn.H[1],nn.H[0]);
-            arma::mat temp_hdw1(nn.H[2],nn.H[1]);
-            arma::mat temp_hdb0(nn.H[1],1);
-            arma::mat temp_hdb1(nn.H[2],1);
+/*
+            MPI_Allreduce(hdw0_l,hdw0,nn.H[1] * nn.H[0],MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
+            MPI_Allreduce(hdw1_l,hdw1,nn.H[2] * nn.H[1],MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
+            MPI_Allreduce(hdb0_l,hdb0,nn.H[1],MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
+            MPI_Allreduce(hdb1_l,hdb1,nn.H[2],MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
+*/
+            
+            arma::mat temp_hdw0=arma::ones<arma::mat>(nn.H[1],nn.H[0]);
+            arma::mat temp_hdw1=arma::ones<arma::mat>(nn.H[2],nn.H[1]);
+            arma::mat temp_hdb0=arma::ones<arma::mat>(nn.H[1],1);
+            arma::mat temp_hdb1=arma::ones<arma::mat>(nn.H[2],1);
 
             memcpy(temp_hdw0.memptr(),hdw0,sizeof(double)*nn.H[1]*nn.H[0]);
             memcpy(temp_hdw1.memptr(),hdw1,sizeof(double)*nn.H[2]*nn.H[1]);
@@ -483,7 +484,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             nn.W[1]-=learning_rate*temp_hdw1;
             nn.b[0]-=learning_rate*temp_hdb0;
             nn.b[1]-=learning_rate*temp_hdb1;
-*/
+
             
             cudaFree(dW0);
             cudaFree(dW1);
