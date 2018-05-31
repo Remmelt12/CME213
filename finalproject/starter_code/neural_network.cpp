@@ -295,14 +295,44 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
 
     int N = (rank == 0)?X.n_cols:0;
     MPI_SAFE_CALL(MPI_Bcast(&N, 1, MPI_INT, 0, MPI_COMM_WORLD));
-    arma x_sub = arma::zeros<arma::mat>(nn.H[1],nn.H[0])
-
-    MPI_Scatter(x,N/batch_size,MPI_DOUBLE,)
-
+  
     std::ofstream error_file;
     error_file.open("Outputs/CpuGpuDiff.txt");
     int print_flag = 0;
 
+
+
+	double* x_sub;
+    x_sub=(double*)malloc(nn.H[0]*batch_size/num_procs*sizeof(double));
+
+    double* y_sub;
+    y_sub=(double*)malloc(nn.H[2]*batch_size/num_procs*sizeof(double));
+
+
+
+    double* hdw0;
+    hdw0 = (double*)malloc(nn.H[1]*nn.H[0]*sizeof(double));
+
+    double* hdw1;
+    hdw1 = (double*)malloc(nn.H[2]*nn.H[1]*sizeof(double));
+
+    double* hdb0;
+    hdb0 = (double*)malloc(nn.H[1]*1*sizeof(double));
+
+    double* hdb1;
+    hdb1 = (double*)malloc(nn.H[2]*1*sizeof(double));
+
+    double* hdw0_l;
+    hdw0 = (double*)malloc(nn.H[1]*nn.H[0]*sizeof(double));
+
+    double* hdw1_l;
+    hdw1 = (double*)malloc(nn.H[2]*nn.H[1]*sizeof(double));
+
+    double* hdb0_l;
+    hdb0 = (double*)malloc(nn.H[1]*1*sizeof(double));
+
+    double* hdb1_l;
+    hdb1 = (double*)malloc(nn.H[2]*1*sizeof(double));
     // std::cout << W[0].n_rows << "\n";tw
 
     /* HINT: You can obtain a raw pointer to the memory used by Armadillo Matrices
@@ -314,13 +344,6 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
        and therefore goes from 0 to epochs*num_batches */
     int iter = 0;
 
-    arma::mat hdW0=arma::zeros<arma::mat>(nn.H[1],nn.H[0]);
-
-    arma::mat hdW1=arma::zeros<arma::mat>(nn.H[2],nn.H[1]);
-
-    arma::mat hdb0=arma::zeros<arma::mat>(nn.H[1],1);
-    
-    arma::mat hdb1=arma::zeros<arma::mat>(nn.H[2],1);
 
     for(int epoch = 0; epoch < epochs; ++epoch) {
         int num_batches = (N + batch_size - 1)/batch_size;
@@ -335,8 +358,12 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
              * 4. update local network coefficient at each node
              */
             int pN = batch_size/num_procs;
+
             arma::mat X_batch = x.cols(batch * batch_size, last_col);
             arma::mat y_batch = y.cols(batch * batch_size, last_col);
+
+            MPI_Scatter(X_batch,batch_size/num_procs,MPI_DOUBLE,x_sub,batch_size/num_procs,MPI_DOUBLE,0,MPI_COMM_WORLD);
+            MPI_Scatter(y_batch,batch_size/num_procs,MPI_DOUBLE,y_sub,batch_size/num_procs,MPI_DOUBLE,0,MPI_COMM_WORLD);
 
             //std::cout<< "Got here."<<std::endl; 
             double* dW0;
@@ -429,10 +456,22 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             row_sum(dZ1,dB0,nn.H[1],pN);
 
 
-            cudaMemcpy(hdW0.memptr(),dW0,sizeof(double)*nn.H[1]*nn.H[0],cudaMemcpyDeviceToHost);
-            cudaMemcpy(hdW1.memptr(),dW1,sizeof(double)*nn.H[2]*nn.H[1],cudaMemcpyDeviceToHost);
-            cudaMemcpy(hdb0.memptr(),dB0,sizeof(double)*nn.H[1]*1,cudaMemcpyDeviceToHost);
-            cudaMemcpy(hdb1.memptr(),dB1,sizeof(double)*nn.H[2]*1,cudaMemcpyDeviceToHost);
+           cudaMemcpy(hdw0_l,dW0,sizeof(double) * nn.H[1] * nn.H[0], cudaMemcpyDeviceToHost);
+            cudaMemcpy(hdw1_l,dW1,sizeof(double) * nn.H[2] * nn.H[1], cudaMemcpyDeviceToHost);
+            cudaMemcpy(hdb0_l,dB0,sizeof(double) * nn.H[1] * 1, cudaMemcpyDeviceToHost);
+            cudaMemcpy(hdb1_l,dB1,sizeof(double) * nn.H[1] * 1, cudaMemcpyDeviceToHost);
+            
+
+            MPI_Allreduce(hdw0_l,hdw0,MPI_DOUBLE,nn.H[1] * nn.H[0],MPI_SUM,MPI_COMM_WORLD);
+            MPI_Allreduce(hdw1_l,hdw1,MPI_DOUBLE,nn.H[2] * nn.H[1],MPI_SUM,MPI_COMM_WORLD);
+            MPI_Allreduce(hdb0_l,hdb0,MPI_DOUBLE,nn.H[1],MPI_SUM,MPI_COMM_WORLD);
+            MPI_Allreduce(hdb1_l,hdb1,MPI_DOUBLE,nn.H[2],MPI_SUM,MPI_COMM_WORLD);
+
+            nn.W[0]-=learning_rate*hdw0;
+            nn.W[1]-=learning_rate*hdw1;
+            nn.b[0]-=learning_rate*hdb0;
+            nn.b[1]-=learning_rate*hdb1;
+
             
             cudaFree(dW0);
             cudaFree(dW1);
@@ -445,11 +484,6 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             cudaFree(dOnes2);
             cudaFree(dZ1);
             cudaFree(dX);
-
-            nn.W[0] = arma::ones<arma::mat>(nn.H[1],nn.H[0]) ;
-            nn.W[1]-= learning_rate * hdW1;
-            nn.b[0]-= learning_rate * hdb0;
-            nn.b[1]-= learning_rate * hdb1;
 
             if(print_every <= 0) {
                 print_flag = batch == 0;
