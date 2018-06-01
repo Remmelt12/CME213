@@ -1,2 +1,0 @@
-mpirun: Forwarding signal 18 to job
-slurmstepd: error: *** JOB 18672 ON gpu-205-1 CANCELLED AT 2018-05-31T18:58:45 ***

@@ -473,7 +473,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             cudaMemcpy(dYc, y_sub, sizeof(double) * nn.H[2] * pN, cudaMemcpyHostToDevice);
 
             
-            //dB0=dW0.T*dX+dB0
+            //dB0=dW0*dX+dB0
             double alpha = 1.0;
             double beta = 1.0;
             myGEMM(dW0,dX,dB0,&alpha,&beta,nn.H[1],pN,nn.H[0]);
@@ -482,13 +482,13 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             cudaMemcpy(dZ1,dB0,sizeof(double)*nn.H[1]*pN,cudaMemcpyDeviceToDevice);
             
             //dB0=sigmoid(dB0)
-            sigmoid_p(dB0,dB0,nn.H[1],pN);
+            sigmoid_p(dZ1,dA0,nn.H[1],pN);
 
             //dA0=dB0
-            cudaMemcpy(dA0,dB0,sizeof(double)*nn.H[1]*pN,cudaMemcpyDeviceToDevice);
+            //cudaMemcpy(dA0,dZ1,sizeof(double)*nn.H[1]*pN,cudaMemcpyDeviceToDevice);
 
-            //dB1=dW1.T*dB0+dB1
-            myGEMM(dW1,dB0,dB1,&alpha,&alpha,nn.H[2],pN,nn.H[1]);
+            //dB1=dW1*dA0+dB1
+            myGEMM(dW1,dA0,dB1,&alpha,&alpha,nn.H[2],pN,nn.H[1]);
 
             //dY=softmax(dB1)
             softmax_p(dB1,dY,nn.H[2],pN);
@@ -503,11 +503,12 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
 
             alpha =1.0;
 
-            //dDW1=dW1
-            cudaMemcpy(dDW1,dW1,sizeof(double)*nn.H[2]*nn.H[1],cudaMemcpyDeviceToDevice);
             
             //dDW1=diff.Y*dA0.T+reg*dDW1
-            myGEMM(diff,dA0,dDW1,&alpha,&reg2,nn.H[2],pN,nn.H[1],false,true);
+            myGEMM(diff,dA0,dW1,&alpha,&reg2,nn.H[2],pN,nn.H[1],false,true);
+            //
+            //dDW1=dW1
+            cudaMemcpy(dDW1,dW1,sizeof(double)*nn.H[2]*nn.H[1],cudaMemcpyDeviceToDevice);
 
             //dDB1=rowsum(diff)
             row_sum(diff,dDB1,nn.H[2],nn.H[1]);
