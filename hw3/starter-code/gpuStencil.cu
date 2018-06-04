@@ -278,12 +278,12 @@ void gpuShared(float* next, const float* curr, int gx, int gy,
     __syncthreads();
     
     j = blockIdx.y*(side-order)+threadIdx.y;
-    /*
-    uint left = bdr;
+    
+    uint left = ;
     uint right = side-bdr;
     uint top = bdr;
     uint bottom = side-bdr;
-    */
+
 
     for (uint k=0;k<side/blockDim.y;k++)
     {
