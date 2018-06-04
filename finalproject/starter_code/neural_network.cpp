@@ -303,6 +303,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
     int rank, num_procs;
     MPI_SAFE_CALL(MPI_Comm_size(MPI_COMM_WORLD, &num_procs));
     MPI_SAFE_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &rank));
+    double num_procs_d=(double) num_procs;
 
     int N = (rank == 0)?X.n_cols:0;
     MPI_SAFE_CALL(MPI_Bcast(&N, 1, MPI_INT, 0, MPI_COMM_WORLD));
@@ -373,7 +374,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
              */
             int pN = batch_size/num_procs;
             int batch_start = batch *batch_size*nn.H[0];
-            double reg2=reg/num_procs;
+            double reg2=reg/num_procs_d;
             int num_elem=std::min(N-batch*batch_size,batch_size);
 
             double* x_sub;
@@ -433,22 +434,33 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             // stretch the b's int matrices.
             arma::mat temp_b0=arma::repmat(nn.b[0], 1, N);
             arma::mat temp_b1=arma::repmat(nn.b[1], 1, N);
+            arma::mat test=2.0* arma::ones<arma::mat>(2,2);
+            std::cout<<"initial: " << test[0] <<std::endl; 
+
+            double* dtest;
+            double* htest = (double*)malloc(2*2*sizeof(double));
+            cudaMalloc((void**)&dtest, sizeof(double) * 2 * 2);
+            cudaMemcpy(dtest, test.memptr(), sizeof(double) * 2 * 2,
+                    cudaMemcpyHostToDevice);
+
+            double a =1.0;
+            double b =0.0;
+            //elem_mult(dtest,dtest,dtest,2,2);
+            cudaMemcpy(htest,dtest , sizeof(double) * 2 * 2,
+                    cudaMemcpyDeviceToHost);
+            std::cout<< "sigmoid: "<< htest[0] <<std::endl; 
+
+
+
+
 
             // Get matrices of all ones and the Identity for later use.
-            arma::mat Ones = arma::ones<arma::mat>(nn.H[2],nn.H[2]);
-            cudaMalloc((void**)&dOnes, sizeof(double) * nn.H[2] * nn.H[2]);
-            cudaMemcpy(dOnes, Ones.memptr(), sizeof(double) * nn.H[2] * nn.H[2],
-                    cudaMemcpyHostToDevice);
 
             arma::mat Ones2 = arma::ones<arma::mat>(nn.H[1],pN);
             cudaMalloc((void**)&dOnes2, sizeof(double) * nn.H[1] * pN);
             cudaMemcpy(dOnes2, Ones2.memptr(), sizeof(double) * nn.H[1] * pN,
                     cudaMemcpyHostToDevice);
             
-            arma::mat Eye = arma::eye<arma::mat>(nn.H[1],nn.H[1]);
-            cudaMalloc((void**)&dEye, sizeof(double) * nn.H[1] * nn.H[1]);
-            cudaMemcpy(dEye, Eye.memptr(), sizeof(double) * nn.H[1] * nn.H[1],
-                    cudaMemcpyHostToDevice);
             
             //dX=X
             cudaMemcpy(dX, x_sub, sizeof(double) * nn.H[0] * pN, cudaMemcpyHostToDevice);
@@ -485,7 +497,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             sigmoid_p(dZ1,dA0,nn.H[1],pN);
 
             //dA0=dB0
-            //cudaMemcpy(dA0,dZ1,sizeof(double)*nn.H[1]*pN,cudaMemcpyDeviceToDevice);
+            cudaMemcpy(dA0,dZ1,sizeof(double)*nn.H[1]*pN,cudaMemcpyDeviceToDevice);
 
             //dB1=dW1*dA0+dB1
             myGEMM(dW1,dA0,dB1,&alpha,&alpha,nn.H[2],pN,nn.H[1]);
@@ -494,15 +506,12 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             softmax_p(dB1,dY,nn.H[2],pN);
 
             //dYc=1/pN(dY-dYc)
-            alpha =1.0/pN/num_procs;
-            beta = -1.0/pN/num_procs;
-            myGEMM(dOnes,dY,dYc,&alpha,&beta,nn.H[2],pN,nn.H[2]);
+            alpha =1.0/(((double)pN)*num_procs_d);
+            beta = -1.0/(((double)pN)*num_procs_d);
 
-            //diff=dYc
-            cudaMemcpy(diff,dYc,sizeof(double)*nn.H[2]*pN,cudaMemcpyDeviceToDevice);
+            elem_add(dY,dYc,diff,alpha,beta,nn.H[2],pN);
 
             alpha =1.0;
-
             
             //dDW1=diff.Y*dA0.T+reg*dDW1
             myGEMM(diff,dA0,dW1,&alpha,&reg2,nn.H[2],pN,nn.H[1],false,true);
@@ -518,8 +527,9 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             myGEMM(dW1,diff,dDA0, &alpha, &beta,nn.H[2],N,nn.H[1],true,false);
 
             //dA0=1-dA0
+            alpha=1.0;
             beta=-1.0;
-            myGEMM(dEye,dOnes2,dA0,&alpha,&beta,nn.H[1],pN,nn.H[1]);
+            elem_add(dOnes2,dA0,dA0,alpha,beta,nn.H[1],pN);
 
             //dA0=dA0%dB0
             elem_mult(dA0,dB0,dA0,nn.H[1],pN);
@@ -535,19 +545,22 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
 
             cudaMemcpy(hdw0_l.memptr(),dW0,sizeof(double) * nn.H[1] * nn.H[0], cudaMemcpyDeviceToHost);
             cudaMemcpy(hdw1_l.memptr(),dDW1,sizeof(double) * nn.H[2] * nn.H[1], cudaMemcpyDeviceToHost);
-            cudaMemcpy(hdb0_l.memptr(),dDB0,sizeof(double) * nn.H[1] * 1, cudaMemcpyDeviceToHost);
-            cudaMemcpy(hdb1_l.memptr(),dDB1,sizeof(double) * nn.H[2] * 1, cudaMemcpyDeviceToHost);
+            cudaMemcpy(hdb0_l.memptr(),dDB0,sizeof(double) * nn.H[1] , cudaMemcpyDeviceToHost);
+            cudaMemcpy(hdb1_l.memptr(),dDB1,sizeof(double) * nn.H[2] , cudaMemcpyDeviceToHost);
            
-             
             MPI_Allreduce(hdw0_l.memptr(),hdw0.memptr(), nn.H[1] * nn.H[0], MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
             MPI_Allreduce(hdw1_l.memptr(),hdw1.memptr(), nn.H[2] * nn.H[1], MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
             MPI_Allreduce(hdb0_l.memptr(),hdb0.memptr(), nn.H[1], MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
             MPI_Allreduce(hdb1_l.memptr(),hdb1.memptr(), nn.H[2], MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
+            std::cout<< hdw0[0]<<std::endl; 
+            //std::cout<< hdw1[0]<<std::endl; 
+            //std::cout<< hdb0[0]<<std::endl; 
+            //std::cout<< hdb1[0]<<std::endl; 
 
-            nn.W[0]-=learning_rate*hdw0;
-            nn.W[1]-=learning_rate*hdw1;
-            nn.b[0]-=learning_rate*hdb0;
-            nn.b[1]-=learning_rate*hdb1;
+            nn.W[0]-=(learning_rate/num_procs_d)*hdw0;
+            nn.W[1]-=(learning_rate/num_procs_d)*hdw1;
+            nn.b[0]-=(learning_rate/num_procs_d)*hdb0;
+            nn.b[1]-=(learning_rate/num_procs_d)*hdb1;
 
             cudaFree(dOnes);
             cudaFree(dOnes2);
@@ -586,15 +599,5 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             iter++;
         }
     }
-    /*
-    free(hdw0);
-    free(hdw0_l);
-    free(hdw1);
-    free(hdw1_l);
-    free(hdb0);
-    free(hdb0_l);
-    free(hdb1);
-    free(hdb1_l);
-    */
     error_file.close();
 }

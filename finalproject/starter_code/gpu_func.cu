@@ -44,8 +44,8 @@ __global__
 void myGEMMkernel(double* A, double* B, double* C, double alpha, double beta, int M,
            int N, int K,bool AT,bool BT) 
 {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = blockIdx.y * blockDim.y + threadIdx.y;
     double inner_prod=0.0;
     if(row<M&&col<N){
         for(int k = 0; k<K; k++){
@@ -56,7 +56,6 @@ void myGEMMkernel(double* A, double* B, double* C, double alpha, double beta, in
                  indexB = (col*K)+k;
             
             }
-
             else if(BT){
                 indexA = (k*M)+row;
                 indexB = (k*N)+col;
@@ -79,7 +78,7 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
 {
     /* TODO: Write an efficient GEMM implementation on GPU */
     dim3 dimBlock(32,32);
-    dim3 dimGrid((N+dimBlock.x-1)/dimBlock.x, (M+dimBlock.y-1)/dimBlock.y);
+    dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
 
     myGEMMkernel<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K,AT,BT);
 
@@ -93,11 +92,11 @@ void softmax_kernel(const double* Z, double* A,int M, int N)
     double denom = 0.0;
     for (int i =0;i<M;i++)
     {
-        denom+=exp(Z[col*M+i]);
+        denom+=std::exp(Z[col*M+i]);
     }
     for (int i =0;i<M;i++)
     {
-        A[col*M+i]=exp(Z[col*M+i])/denom;
+        A[col*M+i]=std::exp(Z[col*M+i])/denom;
     }
 }
 
@@ -112,25 +111,25 @@ void softmax_p(const double* Z, double* A,int M, int N)
 __global__
 void sigmoid_kernel(const double* Z, double* A,int M,int N)
 {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = blockIdx.y * blockDim.y + threadIdx.y;
     if(row<M&&col<N)
     {
-        A[M*col+row]=1.0/(1.0+exp(-1*Z[M*col+row]));
+        A[M*col+row]=1.0/(1.0+std::exp(-1.0*Z[M*col+row]));
     }
 }
 
 void sigmoid_p(const double* Z, double* A,int M, int N)
 {
     dim3 dimBlock(32,32);
-    dim3 dimGrid((N+dimBlock.x-1)/dimBlock.x, (M+dimBlock.y-1)/dimBlock.y);
+    dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
     sigmoid_kernel<<<dimGrid,dimBlock>>>(Z,A,M,N);
 }
 
 __global__
 void row_sum_kernel(double* W, double* Y, int M, int N)
 {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
     if(row<M)
     {
         double sum=0.0;
@@ -146,16 +145,17 @@ void row_sum_kernel(double* W, double* Y, int M, int N)
 void row_sum(double* W, double* Y, int M, int N)
 {
     dim3 dimBlock(32);
-    dim3 dimGrid((N+dimBlock.x-1)/dimBlock.x);
+    dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x);
     row_sum_kernel<<<dimGrid,dimBlock>>>(W,Y,M,N);
 
 
 }
+
 __global__
 void elem_mult_kernel(double* A, double* B, double* C,int M,int N)
 {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = blockIdx.y * blockDim.y + threadIdx.y;
     if(row<M&&col<N)
     {
         C[(col*M+row)]=A[(col*M+row)]*B[(col*M+row)];
@@ -165,6 +165,25 @@ void elem_mult_kernel(double* A, double* B, double* C,int M,int N)
 void elem_mult(double* A, double* B, double* C,int M,int N)
 {
     dim3 dimBlock(32,32);
-    dim3 dimGrid((N+dimBlock.x-1)/dimBlock.x, (M+dimBlock.y-1)/dimBlock.y);
+    dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
     elem_mult_kernel<<<dimGrid,dimBlock>>>(A,B,C,M,N);
+}
+
+__global__
+void elem_add_kernel(double* A, double* B, double* C,double alpha, double beta,int M,int N)
+{
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = blockIdx.y * blockDim.y + threadIdx.y;
+    if(row<M&&col<N)
+    {
+        C[(col*M+row)]=alpha*A[(col*M+row)]+beta*B[(col*M+row)];
+    }
+
+}
+
+void elem_add(double* A, double* B, double* C,double alpha, double beta,int M,int N)
+{
+    dim3 dimBlock(32,32);
+    dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
+    elem_add_kernel<<<dimGrid,dimBlock>>>(A,B,C,alpha,beta,M,N);
 }
