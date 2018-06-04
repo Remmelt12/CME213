@@ -41,4 +41,4 @@ echo ----------------
 #MV2_USE_CUDA=1 mpirun -np 4 nvprof --output-profile profile.%p.nvprof ./main -g
 #1
 # mpirun -np 4 ./main -s -n 1000 -b 800 -l 0.01 -e 20
-mpirun -np 4 ./main -g 3 -b 8000 
+mpirun -np 1 ./main -g 3 

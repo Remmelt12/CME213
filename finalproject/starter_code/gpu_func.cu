@@ -187,3 +187,25 @@ void elem_add(double* A, double* B, double* C,double alpha, double beta,int M,in
     dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
     elem_add_kernel<<<dimGrid,dimBlock>>>(A,B,C,alpha,beta,M,N);
 }
+
+__global__
+void elem_mod_kernel(double* A, double* B,double alpha, double beta,int M,int N)
+{
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = blockIdx.y * blockDim.y + threadIdx.y;
+    if(row<M&&col<N)
+    {
+        B[(col*M+row)]=alpha-beta*A[(col*M+row)];
+    }
+
+}
+
+void elem_mod(double* A, double* B,double alpha, double beta,int M,int N)
+{
+    dim3 dimBlock(32,32);
+    dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
+    elem_mod_kernel<<<dimGrid,dimBlock>>>(A,B,alpha,beta,M,N);
+
+
+
+}
