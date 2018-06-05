@@ -25,7 +25,7 @@ public:
         for(int i = 0; i < num_layers; i++) {
             arma::arma_rng::set_seed(arma::arma_rng::seed_type(i));
             W[i] = 0.01 * arma::randn(H[i+1], H[i]);
-            b[i].ones(H[i+1]);
+            b[i].zeros(H[i+1]);
         }
     }
 };

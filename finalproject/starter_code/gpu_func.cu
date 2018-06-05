@@ -47,30 +47,38 @@ void myGEMMkernel(double* A, double* B, double* C, double alpha, double beta, in
     int row = blockIdx.x * blockDim.x + threadIdx.x;
     int col = blockIdx.y * blockDim.y + threadIdx.y;
     double inner_prod=0.0;
-    if(row<M&&col<N){
-        for(int k = 0; k<K; k++){
-            int indexA;
-            int indexB;
             if (AT){
-                 indexA = (row*K)+k;
-                 indexB = (col*K)+k;
+			if(row< K&&col <N){
+				for(int k = 0; k<K; k++){
+                int indexA = (row*K)+k;
+                int indexB = (col*K)+k;
+				inner_prod+=A[indexA]*B[indexB];
             
+				}
             }
+			}
             else if(BT){
-                indexA = (k*M)+row;
-                indexB = (k*N)+col;
-            
+			if(row< M&&col <K){
+				for(int k = 0; k<K; k++){
+                int indexA = (k*M)+row;
+                int indexB = (k*N)+col;
+				inner_prod+=A[indexA]*B[indexB];
             }
+			}
+			}
 
             else{
-                indexA = (k*M)+row;
-                indexB = (col*K)+k;
+			if(row< M&&col <N){
+				for(int k = 0; k<K; k++){
+					int indexA = (k*M)+row;
+					int indexB = (col*K)+k;
+					inner_prod+=A[indexA]*B[indexB];
             
             }
-            inner_prod+=A[indexA]*B[indexB];
         }
-        C[col*M+row] =alpha*inner_prod+beta*C[col*M+row];
     }
+        C[col*M+row] =alpha*inner_prod+beta*C[col*M+row];
+
 }
 
 int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
@@ -90,13 +98,15 @@ void softmax_kernel(const double* Z, double* A,int M, int N)
 {
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     double denom = 0.0;
+    if(col<N){
     for (int i =0;i<M;i++)
     {
-        denom+=std::exp(Z[col*M+i]);
+        denom+=(double) std::exp(Z[col*M+i]);
     }
     for (int i =0;i<M;i++)
     {
-        A[col*M+i]=std::exp(Z[col*M+i])/denom;
+        A[col*M+i]=std::exp(Z[col*M+i])/(double)denom;
+    }
     }
 }
 
@@ -115,7 +125,7 @@ void sigmoid_kernel(const double* Z, double* A,int M,int N)
     int col = blockIdx.y * blockDim.y + threadIdx.y;
     if(row<M&&col<N)
     {
-        A[M*col+row]=1.0/(1.0+std::exp(-1.0*Z[M*col+row]));
+        A[M*col+row]=(double)1.0/(double)(1.0+std::exp(-1.0*Z[M*col+row]));
     }
 }
 
@@ -208,4 +218,22 @@ void elem_mod(double* A, double* B,double alpha, double beta,int M,int N)
 
 
 
+}
+/* GPU kernel for derivative of sigmoid */
+
+__global__
+void sigmoid_back_kernel(double *A, double *B, double *C, int M, int N) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = blockIdx.y * blockDim.y + threadIdx.y;
+    if (row < M && col < N) {
+        C[(M*col)+row]=A[(M*col)+row] * B[(M*col)+row] * (1.0 -B[(M*col)+row]);
+    }
+
+}
+
+/** Routine for derivative of sigmoid */
+void sigmoid_back(double *A, double *B, double *C, int M, int N) {
+    dim3 dimBlock(32,32);
+    dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
+    sigmoid_back_kernel<<< dimGrid, dimBlock >>>(A, B, C, M, N);
 }

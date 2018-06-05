@@ -54,6 +54,8 @@ void elem_add(double* A, double* B, double* C,double alpha, double beta, int M,i
 
 void elem_mod(double* A, double* B,double alpha, double beta, int M,int N);
 
+void sigmoid_back(double *A, double *B, double *C, int M, int N);
+
 int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
                    int N, int K,bool AT=false, bool BT=false);
 
