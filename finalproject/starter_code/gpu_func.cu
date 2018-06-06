@@ -46,6 +46,25 @@ void myGEMMkernel(double* A, double* B, double* C, double alpha, double beta, in
 {
     int row = blockIdx.x * blockDim.x + threadIdx.x;
     int col = blockIdx.y * blockDim.y + threadIdx.y;
+    if (row < M && col < N) {
+        int c_ind = row + (col * M);
+        double dot_prod = 0.0;
+        int a_ind;
+        int b_ind;
+        for(int i = 0; i < K; i++) {
+            if (AT)
+                a_ind = (row*K) + i;
+            else
+                a_ind = row + (i*M);
+            if (BT)
+                b_ind = col + (i*N);
+            else
+                b_ind = i + (col * K);
+            dot_prod += A[a_ind] * B[b_ind];
+        }
+        C[c_ind] = (alpha * dot_prod) + (beta * C[c_ind]);
+    }
+    /*
     double inner_prod=0.0;
             if (AT){
 			if(row< K&&col <N){
@@ -78,6 +97,7 @@ void myGEMMkernel(double* A, double* B, double* C, double alpha, double beta, in
         }
     }
         C[col*M+row] =alpha*inner_prod+beta*C[col*M+row];
+        */
 
 }
 
@@ -85,7 +105,7 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
            int N, int K,bool AT,bool BT) 
 {
     /* TODO: Write an efficient GEMM implementation on GPU */
-    dim3 dimBlock(32,32);
+    dim3 dimBlock(32,6);
     dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
 
     myGEMMkernel<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K,AT,BT);
@@ -94,9 +114,22 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
 }
 
 __global__
-void softmax_kernel(const double* Z, double* A,int M, int N)
+void softmax_kernel(double* A,int M, int N)
 {
     int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (col < N) {
+        double denominator = 0.0;
+
+        for(int c = 0; c < M; c++){
+            denominator += (double) std::exp(A[col*M + c]);
+        }
+
+        for(int c = 0; c < num_classes; c++){
+            int ij = c + (col * num_classes);
+            A[ij] = (double) std::exp(A[ij])/ (double) denominator;
+        }
+    }
+    /*
     double denom = 0.0;
     if(col<N){
     for (int i =0;i<M;i++)
@@ -107,33 +140,34 @@ void softmax_kernel(const double* Z, double* A,int M, int N)
     {
         A[col*M+i]=std::exp(Z[col*M+i])/(double)denom;
     }
-    }
+    }*/
 }
 
 void softmax_p(const double* Z, double* A,int M, int N)
 {
-    dim3 dimBlock(32);
+    dim3 dimBlock(192);
     dim3 dimGrid((N+dimBlock.y-1)/dimBlock.x);
-    softmax_kernel<<<dimGrid,dimBlock>>>(Z,A,M,N);
+    softmax_kernel<<<dimGrid,dimBlock>>>(A,M,N);
 
 }
 
 __global__
-void sigmoid_kernel(const double* Z, double* A,int M,int N)
+void sigmoid_kernel(double* A,int M,int N)
 {
     int row = blockIdx.x * blockDim.x + threadIdx.x;
     int col = blockIdx.y * blockDim.y + threadIdx.y;
     if(row<M&&col<N)
     {
-        A[M*col+row]=(double)1.0/(double)(1.0+std::exp(-1.0*Z[M*col+row]));
+        int ind = row + (col * M);
+        A[ind] = (double) 1.0 / (double)(1.0 + exp(-1.0 * A[ind]));
     }
 }
 
 void sigmoid_p(const double* Z, double* A,int M, int N)
 {
-    dim3 dimBlock(32,32);
+    dim3 dimBlock(32,6);
     dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
-    sigmoid_kernel<<<dimGrid,dimBlock>>>(Z,A,M,N);
+    sigmoid_kernel<<<dimGrid,dimBlock>>>(A,M,N);
 }
 
 __global__
@@ -144,7 +178,7 @@ void row_sum_kernel(double* W, double* Y, int M, int N)
     {
         double sum=0.0;
         for(int i=0;i<N;i++){
-            sum+=W[i*M+row];
+            sum+=W[(i*M)+row];
         }
         Y[row]=sum;
     }
@@ -154,7 +188,7 @@ void row_sum_kernel(double* W, double* Y, int M, int N)
 
 void row_sum(double* W, double* Y, int M, int N)
 {
-    dim3 dimBlock(32);
+    dim3 dimBlock(192);
     dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x);
     row_sum_kernel<<<dimGrid,dimBlock>>>(W,Y,M,N);
 
