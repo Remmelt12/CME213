@@ -172,7 +172,7 @@ void write_diff_gpu_cpu(NeuralNetwork& nn, int iter,
 }
 
 /* CPU IMPLEMENTATIONS */
-void feedforward_gpu(dev_cache& cache,int D0, int D1,int D2,int D3)
+void feedforward_gpu(dev_cache& c,int D0, int D1,int D2,int D3)
 {
 
         std::vector<double> test_Y(D0*D3); 
@@ -188,33 +188,33 @@ void feedforward_gpu(dev_cache& cache,int D0, int D1,int D2,int D3)
 		//dZ1=dB0
         double alpha=1.0;
         double beta=0.0;
-		cudaMemcpy(cache.dZ0,cache.dB0,sizeof(double)*D2*D0,cudaMemcpyDeviceToDevice);
-		myGEMM(cache.dW0,cache.dX,cache.dA1,&alpha,&beta,D2,D0,D1);
-		//cudaMemcpy(&test_A0[0],cache.dZ0,sizeof(double)* D2 * D0,cudaMemcpyDeviceToHost);
+		cudaMemcpy(c.dZ0,c.dB0,sizeof(double)*D2*D0,cudaMemcpyDeviceToDevice);
+		myGEMM(c.dW0,c.dX,c.dA1,&alpha,&beta,D2,D0,D1);
+		//cudaMemcpy(&test_A0[0],c.dZ0,sizeof(double)* D2 * D0,cudaMemcpyDeviceToHost);
 		//std::cout<< "feed Z0: "<<test_A0[0] <<std::endl;  
 
-
+		elem_add(c.)
 		
 		//dB0=sigmoid(dB0)
-		sigmoid_p(cache.dZ0,cache.dA1,D2,D0);
-		//cudaMemcpy(&test_A0[0],cache.dA0,sizeof(double)* D2 * D0,cudaMemcpyDeviceToHost);
+		sigmoid_p(c.dZ0,c.dA1,D2,D0);
+		//cudaMemcpy(&test_A0[0],c.dA0,sizeof(double)* D2 * D0,cudaMemcpyDeviceToHost);
 		//std::cout<< "feed A0: "<<test_A0[0] <<std::endl;  
 
 		//dA0=dB0
 		//cudaMemcpy(dA0,dZ1,sizeof(double)*nn.H[1]*D0,cudaMemcpyDeviceToDevice);
-		cudaMemcpy(cache.dZ1,cache.dB1,sizeof(double)*D3*D0,cudaMemcpyDeviceToDevice);
+		cudaMemcpy(c.dZ1,c.dB1,sizeof(double)*D3*D0,cudaMemcpyDeviceToDevice);
 
 		//dB1=dW1*dA0+dB1
-		myGEMM(cache.dW1,cache.dA0,cache.dZ1,&alpha,&alpha,D3,D0,D2);
-		//cudaMemcpy(&test_B1[0],cache.dZ1,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
+		myGEMM(c.dW1,c.dA0,c.dZ1,&alpha,&alpha,D3,D0,D2);
+		//cudaMemcpy(&test_B1[0],c.dZ1,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
 		//std::cout<< "B1: "<<test_B1[0]<<std::endl; 
 
 		//dY=softmax(dB1)
-		softmax_p(cache.dZ1,cache.dYc,D3,D0);
-		cudaMemcpy(cache.dA1,cache.dYc,sizeof(double)*D3*D0,cudaMemcpyDeviceToDevice);
-        //cudaMemcpy(&test_Y[0],cache.dYc,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
+		softmax_p(c.dZ1,c.dYc,D3,D0);
+		cudaMemcpy(c.dA1,c.dYc,sizeof(double)*D3*D0,cudaMemcpyDeviceToDevice);
+        //cudaMemcpy(&test_Y[0],c.dYc,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
         //std::cout<< "feed Yc: "<<test_Y[0]<<std::endl; 
-		//cudaMemcpy(&test_Y[0],cache.dY,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
+		//cudaMemcpy(&test_Y[0],c.dY,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
 		//std::cout<< "Y: "<<test_Y[0]<<std::endl; 
 
 
@@ -251,7 +251,7 @@ void feedforward(NeuralNetwork& nn, const arma::mat& X, struct cache& cache) {
  * @params bpcache : Output of feedforward.
  * @params bpgrads: Returns the gradients for each param
  */
-void backprop_gpu(dev_cache& cache,NeuralNetwork& nn,double reg,int D0,int batch_size)
+void backprop_gpu(dev_cache& c,NeuralNetwork& nn,double reg,int D0,int batch_size)
 {
    int D1 = nn.H[0];               // input feature dimension
    int D2 = nn.W[0].n_rows;        // hidden layer dimension
@@ -266,58 +266,58 @@ void backprop_gpu(dev_cache& cache,NeuralNetwork& nn,double reg,int D0,int batch
    double alpha =1.0/((double)batch_size);
    double beta = -1.0/((double)batch_size);
 
-   //cudaMemcpy(&test_Y[0],cache.dY,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
+   //cudaMemcpy(&test_Y[0],c.dY,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
    //std::cout<< "back Y: "<<test_Y[0]<<std::endl; 
    
-   //cudaMemcpy(&test_Y[0],cache.dYc,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
+   //cudaMemcpy(&test_Y[0],c.dYc,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
    //std::cout<< "back Yc: "<<test_Y[0]<<std::endl; 
 
-   elem_add(cache.dYc,cache.dY,cache.diff,alpha,beta,D3,D0);
-   //cudaMemcpy(&test_Y[0],cache.dA0,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
+   elem_add(c.dYc,c.dY,c.diff,alpha,beta,D3,D0);
+   //cudaMemcpy(&test_Y[0],c.dA0,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
    //std::cout<< "back A0: "<<test_Y[0]<<std::endl; 
 
 
    alpha=1.0;
    beta = 0.0;
    
-   cudaMemcpy(cache.dDW1,cache.dW1,sizeof(double)*D3*D2,cudaMemcpyDeviceToDevice);
-   myGEMM(cache.diff,cache.dA0,cache.dDW1,&alpha,&reg,D3,D0,D2,false,true);
+   cudaMemcpy(c.dDW1,c.dW1,sizeof(double)*D3*D2,cudaMemcpyDeviceToDevice);
+   myGEMM(c.diff,c.dA0,c.dDW1,&alpha,&reg,D3,D0,D2,false,true);
    
-   //cudaMemcpy(&test_diff[0],cache.diff,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
+   //cudaMemcpy(&test_diff[0],c.diff,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
    //std::cout<< "diff: "<<test_diff[100]<<std::endl; 
    //
    //dDW1=dW1
-   //cudaMemcpy(&test_W1[0],cache.dDW1,sizeof(double)* D3 * D2,cudaMemcpyDeviceToHost);
+   //cudaMemcpy(&test_W1[0],c.dDW1,sizeof(double)* D3 * D2,cudaMemcpyDeviceToHost);
    //std::cout<< "DW1: "<<test_W1[0]<<std::endl; 
 
    //dDB1=rowsum(diff)
-   row_sum(cache.diff,cache.dDB1,D3,D0);
-   //cudaMemcpy(&test_B1[0],cache.dDB1,sizeof(double)* D3,cudaMemcpyDeviceToHost);
+   row_sum(c.diff,c.dDB1,D3,D0);
+   //cudaMemcpy(&test_B1[0],c.dDB1,sizeof(double)* D3,cudaMemcpyDeviceToHost);
    //std::cout<< "DB1: "<<test_B1[0]<<std::endl; 
 
    //dDA0=dW1.T*diff
    beta=0.0;
-   myGEMM(cache.dW1,cache.diff,cache.dDA0, &alpha, &beta,D3,D0,D2,true,false);
-   //cudaMemcpy(&test_A0[0],cache.dDA0,sizeof(double)*D2*D0,cudaMemcpyDeviceToHost);
+   myGEMM(c.dW1,c.diff,c.dDA0, &alpha, &beta,D3,D0,D2,true,false);
+   //cudaMemcpy(&test_A0[0],c.dDA0,sizeof(double)*D2*D0,cudaMemcpyDeviceToHost);
    //std::cout<< "DA1: "<<test_A0[0]<<std::endl; 
 
    //dA0=1-dA0
    alpha=1.0;
    beta=-1.0;
    
-   sigmoid_back(cache.dDA0, cache.dA0, cache.dDA02, D2, D0);
+   sigmoid_back(c.dDA0, c.dA0, c.dDA02, D2, D0);
 
    //dW0=dZ1.T*dX.T+reg*dW0
-   //cudaMemcpy(&test_B0[0],cache.dDA02,sizeof(double)*D2*D0,cudaMemcpyDeviceToHost);
+   //cudaMemcpy(&test_B0[0],c.dDA02,sizeof(double)*D2*D0,cudaMemcpyDeviceToHost);
    //std::cout<< "DZ1: "<<test_B0[0]<<std::endl; 
 
-   myGEMM(cache.dDA02,cache.dX,cache.dW0,&alpha,&reg,D2,D0,D1,false,true);
+   myGEMM(c.dDA02,c.dX,c.dW0,&alpha,&reg,D2,D0,D1,false,true);
    //cudaMemcpy(&test_W0[0],dDW0,sizeof(double)*D2*D1,cudaMemcpyDeviceToHost);
    //std::cout<< "DW0: "<<test_W0[0]<<std::endl; 
 
    //dDB0=rowsum(dZ1)
-   row_sum(cache.dDA0,cache.dDB0,D2,D0);
-   //cudaMemcpy(&test_DB0[0],cache.dDB0,sizeof(double)*D2,cudaMemcpyDeviceToHost);
+   row_sum(c.dDA0,c.dDB0,D2,D0);
+   //cudaMemcpy(&test_DB0[0],c.dDB0,sizeof(double)*D2,cudaMemcpyDeviceToHost);
    //std::cout<< "DB0: "<<test_DB0[0]<<std::endl; 
 
 }
