@@ -187,20 +187,18 @@ void feedforward_gpu(dev_cache& cache,int D0, int D1,int D2,int D3)
         //std::vector<double> testZ0(D2*D0); 
 		//dZ1=dB0
         double alpha=1.0;
-        double beta=1.0;
+        double beta=0.0;
 		cudaMemcpy(cache.dZ0,cache.dB0,sizeof(double)*D2*D0,cudaMemcpyDeviceToDevice);
-		myGEMM(cache.dW0,cache.dX,cache.dZ0,&alpha,&beta,D2,D0,D1);
+		myGEMM(cache.dW0,cache.dX,cache.dA1,&alpha,&beta,D2,D0,D1);
 		//cudaMemcpy(&test_A0[0],cache.dZ0,sizeof(double)* D2 * D0,cudaMemcpyDeviceToHost);
 		//std::cout<< "feed Z0: "<<test_A0[0] <<std::endl;  
 
 
 		
 		//dB0=sigmoid(dB0)
-		sigmoid_p(cache.dZ0,cache.dA0,D2,D0);
+		sigmoid_p(cache.dZ0,cache.dA1,D2,D0);
 		//cudaMemcpy(&test_A0[0],cache.dA0,sizeof(double)* D2 * D0,cudaMemcpyDeviceToHost);
 		//std::cout<< "feed A0: "<<test_A0[0] <<std::endl;  
-
-		//std::vector<double> test2(2*2,1.0) 
 
 		//dA0=dB0
 		//cudaMemcpy(dA0,dZ1,sizeof(double)*nn.H[1]*D0,cudaMemcpyDeviceToDevice);
@@ -562,17 +560,11 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             double * b0_=b0_rep.memptr();
 
             
-            MPI_SAFE_CALL(MPI_Scatter(X.memptr()+(batch_start*D1),D0*D1,MPI_DOUBLE
+            MPI_SAFE_CALL(MPI_Scatter(X.colptr(batch_start),D0*D1,MPI_DOUBLE
                                         ,&x_sub[0],D0*D1,MPI_DOUBLE,0,MPI_COMM_WORLD));
                         
-            MPI_SAFE_CALL(MPI_Scatter(y.memptr()+(batch_start*D3),D0*D3,MPI_DOUBLE
+            MPI_SAFE_CALL(MPI_Scatter(y.colptr(batch_start),D0*D3,MPI_DOUBLE
                                         ,&y_sub[0],D0*D3,MPI_DOUBLE,0,MPI_COMM_WORLD));
-            
-            //std::cout<<"initial W: " << W0_[0]<<std::endl; 
-
-            //std::cout<< "Got here."<<std::endl; 
-
-            // stretch the b's int matrices.
 
 
             //dX=X
