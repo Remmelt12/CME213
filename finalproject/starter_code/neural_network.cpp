@@ -515,20 +515,11 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
     /* iter is a variable used to manage debugging. It increments in the inner loop
        and therefore goes from 0 to epochs*num_batches */
     int iter = 0;
-    int sbsize = batch_size / num_procs; // HOW TO HANDLE bsize not divisable by num_procs
-    int D0 = sbsize;                // subbatch size
     int D1 = nn.H[0];        // input feature dimension
     int D2 = nn.W[0].n_rows;        // hidden layer dimension
     int D3 = nn.W[1].n_rows;        // output layer dimension
 
     
-    arma::mat b0_rep = arma::repmat(nn.b[0], 1, D0);
-    arma::mat b1_rep = arma::repmat(nn.b[1], 1, D0);
-    
-    double * b1_=b1_rep.memptr();
-    double * b0_=b0_rep.memptr();
-    double * W0_=nn.W[0].memptr();
-    double * W1_=nn.W[1].memptr();
 
     arma::mat hdw0(D2,D1);
     arma::mat hdw1(D3,D2);
@@ -540,8 +531,6 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
     arma::mat hdb0_l(D2,1);
     arma::mat hdb1_l(D3,1);
 
-    std::vector<double> x_sub(D1*D0); 
-    std::vector<double> y_sub(D3*D0); 
 
     for(int epoch = 0; epoch < epochs; ++epoch) {
         int num_batches = (N + batch_size - 1)/batch_size;
@@ -559,23 +548,29 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             
             int num_elem=std::min(N-batch*batch_size,batch_size);
             
-            D0=num_elem/num_procs;
-            
-            MPI_Scatter(X.memptr()+(batch_start*D1),D0*D1,MPI_DOUBLE
-                                        ,&x_sub[0],D0*D1,MPI_DOUBLE,0,MPI_COMM_WORLD);
-                        
-            MPI_Scatter(y.memptr()+(batch_start*D3),D0*D3,MPI_DOUBLE
-                                        ,&y_sub[0],D0*D3,MPI_DOUBLE,0,MPI_COMM_WORLD);
-            
-            //std::cout<<"initial W: " << W0_[0]<<std::endl; 
+            int D0=num_elem/num_procs;
 
-            //std::cout<< "Got here."<<std::endl; 
 	        dev_cache cache(D0,D1,D2,D3);
+
+            std::vector<double> x_sub(D1*D0); 
+            std::vector<double> y_sub(D3*D0); 
+            
             arma::mat b0_rep = arma::repmat(nn.b[0], 1, D0);
             arma::mat b1_rep = arma::repmat(nn.b[1], 1, D0);
             
             double * b1_=b1_rep.memptr();
             double * b0_=b0_rep.memptr();
+
+            
+            MPI_SAFE_CALL(MPI_Scatter(X.memptr()+(batch_start*D1),D0*D1,MPI_DOUBLE
+                                        ,&x_sub[0],D0*D1,MPI_DOUBLE,0,MPI_COMM_WORLD));
+                        
+            MPI_SAFE_CALL(MPI_Scatter(y.memptr()+(batch_start*D3),D0*D3,MPI_DOUBLE
+                                        ,&y_sub[0],D0*D3,MPI_DOUBLE,0,MPI_COMM_WORLD));
+            
+            //std::cout<<"initial W: " << W0_[0]<<std::endl; 
+
+            //std::cout<< "Got here."<<std::endl; 
 
             // stretch the b's int matrices.
 
@@ -627,10 +622,10 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             cudaMemcpy(hdb0_l.memptr(),cache.dDB0,sizeof(double) * D2 , cudaMemcpyDeviceToHost);
             cudaMemcpy(hdb1_l.memptr(),cache.dDB1,sizeof(double) * D3 , cudaMemcpyDeviceToHost);
            
-            MPI_Allreduce(hdw0_l.memptr(),hdw0.memptr(), D2 * D1, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
-            MPI_Allreduce(hdw1_l.memptr(),hdw1.memptr(), D3 * D2, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
-            MPI_Allreduce(hdb0_l.memptr(),hdb0.memptr(), D2, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
-            MPI_Allreduce(hdb1_l.memptr(),hdb1.memptr(), D3, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
+            MPI_SAFE_CALL(MPI_Allreduce(hdw0_l.memptr(),hdw0.memptr(), D2 * D1, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD));
+            MPI_SAFE_CALL(MPI_Allreduce(hdw1_l.memptr(),hdw1.memptr(), D3 * D2, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD));
+            MPI_SAFE_CALL(MPI_Allreduce(hdb0_l.memptr(),hdb0.memptr(), D2, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD));
+            MPI_SAFE_CALL(MPI_Allreduce(hdb1_l.memptr(),hdb1.memptr(), D3, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD));
 
             nn.W[0]-=(learning_rate/num_procs)*hdw0;
             nn.W[1]-=(learning_rate/num_procs)*hdw1;
