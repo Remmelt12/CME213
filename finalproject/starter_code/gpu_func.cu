@@ -124,8 +124,8 @@ void softmax_kernel(double* A,int M, int N)
             denominator += (double) std::exp(A[col*M + c]);
         }
 
-        for(int c = 0; c < num_classes; c++){
-            int ij = c + (col * num_classes);
+        for(int c = 0; c < M; c++){
+            int ij = c + (col * M);
             A[ij] = (double) std::exp(A[ij])/ (double) denominator;
         }
     }
