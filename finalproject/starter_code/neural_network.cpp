@@ -363,6 +363,8 @@ void train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
         }
     }
 }
+
+
 void gpuBackprop(device_cache &d, int N, double regularization, NeuralNetwork &nn, int num_processes) {
     int num_neurons = d.num_neurons;
     int num_classes = d.num_classes;

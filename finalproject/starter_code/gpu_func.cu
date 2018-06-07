@@ -36,7 +36,7 @@ int useless_gpu_add_one(int t) {
     return result;
 }
 
-_global__
+__global__
 void myGEMM_kernel(double* A, double* B, double* C,
                    double alpha, double beta,
                    int M, int N, int K,
@@ -255,9 +255,6 @@ void gpudSigmoid(double *A, double *B, double *C, int M, int N) {
     gpudSigmoid_kernel<<< blocks, threads >>>(A, B, C, M, N);
     check_launch("gpudSigmoid");
 }
-/*
-Routine to perform an in-place GEMM operation, i.e., C := alpha*A*B + beta*C
-*/
 
 /*
 __global__
@@ -285,7 +282,7 @@ void myGEMMkernel(double* A, double* B, double* C, double alpha, double beta, in
         }
         C[c_ind] = (alpha * dot_prod) + (beta * C[c_ind]);
     }
-    /*
+    
     double inner_prod=0.0;
             if (AT){
 			if(row< K&&col <N){
@@ -318,14 +315,12 @@ void myGEMMkernel(double* A, double* B, double* C, double alpha, double beta, in
         }
     }
         C[col*M+row] =alpha*inner_prod+beta*C[col*M+row];
-      */  
-
 }
 
 int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
            int N, int K,bool AT,bool BT) 
 {
-    /* TODO: Write an efficient GEMM implementation on GPU */
+
     dim3 dimBlock(32,6);
     dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
 
@@ -350,7 +345,7 @@ void softmax_kernel(double* A,int M, int N)
             A[ij] = (double) std::exp(A[ij])/ (double) denominator;
         }
     }
-    /*
+    
     double denom = 0.0;
     if(col<N){
     for (int i =0;i<M;i++)
@@ -361,7 +356,7 @@ void softmax_kernel(double* A,int M, int N)
     {
         A[col*M+i]=std::exp(Z[col*M+i])/(double)denom;
     }
-    }*/
+    }
 }
 
 void softmax_p(double* A,int M, int N)
@@ -474,7 +469,6 @@ void elem_mod(double* A, double* B,double alpha, double beta,int M,int N)
 
 
 }
-/* GPU kernel for derivative of sigmoid */
 
 __global__
 void sigmoid_back_kernel(double *A, double *B, double *C, int M, int N) {
@@ -486,10 +480,10 @@ void sigmoid_back_kernel(double *A, double *B, double *C, int M, int N) {
 
 }
 
-/** Routine for derivative of sigmoid */
 void sigmoid_back(double *A, double *B, double *C, int M, int N) {
     dim3 dimBlock(32,6);
     dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
     sigmoid_back_kernel<<< dimGrid, dimBlock >>>(A, B, C, M, N);
 }
 */
+
