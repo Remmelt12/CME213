@@ -107,7 +107,7 @@ void gpuHadamard(double *A, double *B, double *C, int M, int N);
 void gpuElementwiseSum(double *A, double *B, double *C, double alpha, double beta, int M, int N);
 void gpuMatrixScalarProduct(double *A, double alpha, int M, int N);
 void gpudSigmoid(double *A, double *B, double *C, int M, int N);
-/*
+
 void sigmoid_p( double* A,int M, int N);
 
 void softmax_p(double* A,int M, int N);
@@ -122,8 +122,5 @@ void elem_mod(double* A, double* B,double alpha, double beta, int M,int N);
 
 void sigmoid_back(double *A, double *B, double *C, int M, int N);
 
-int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
-                   int N, int K,bool AT=false, bool BT=false);
-*/
 #endif
 
