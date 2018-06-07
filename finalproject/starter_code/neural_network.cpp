@@ -363,12 +363,263 @@ void train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
         }
     }
 }
+void gpuBackprop(device_cache &d, int N, double regularization, NeuralNetwork &nn, int num_processes) {
+    int num_neurons = d.num_neurons;
+    int num_classes = d.num_classes;
+    int num_pixels = d.num_pixels;
+    double reg = regularization/ (double) num_processes;
+    double one = 1.0;
+    double zero = 0.0;
+    double Ninv_pos = 1.0/((double) N * (double) num_processes);
+    double Ninv_neg = -1.0*Ninv_pos;
+
+    //find difference between labels and predictions
+    //............
+    //std::cout << "NINVPOS = " << Ninv_pos << std::endl;
+    //double* h_y_h = (double*) malloc(sizeof(double) * num_classes * N);
+    //cudaMemcpy(h_y_h, d.yh, sizeof(double) * num_classes * N, cudaMemcpyDeviceToHost);
+    //double* h_y = (double*) malloc(sizeof(double) * num_classes * N);
+    //cudaMemcpy(h_y, d.y, sizeof(double) * num_classes * N, cudaMemcpyDeviceToHost);
+    //for(int i = 0; i < 5; i++){
+    //    std::cout << "i: " << i << ", true: " << h_y[i] << std::endl;
+    //    std::cout << "i: " << i << ", pred: " << h_y_h[i] << std::endl;
+    //}
+    //............
+    gpuElementwiseSum(d.yh, d.y, d.y_diff, Ninv_pos, Ninv_neg, num_classes, N);
+       
+    //double* h_y_diff = (double*) malloc(sizeof(double) * num_classes * N);
+    //cudaMemcpy(h_y_diff, d.y_diff, sizeof(double) * num_classes * N, cudaMemcpyDeviceToHost);
+    //for(int i = 0; i < 5; i++){
+    //    std::cout << "i: " << i << ", diff: " << h_y_diff[i] << std::endl;
+    //}
+
+    //calculate dW2
+    cudaMemcpy(d.dW2, d.W2, sizeof(double) * num_classes * num_neurons, cudaMemcpyDeviceToDevice);
+    myGEMM(d.y_diff, d.A1, d.dW2, &one, &reg, num_classes, num_neurons, N, false, true);
+
+    //calculate db2
+    gpuRowSum(d.y_diff, d.db2, num_classes, N);
+
+
+    //dA1
+    myGEMM(d.W2, d.y_diff, d.dA1, &one, &zero, num_neurons, N, num_classes, true, false);
+    
+    //.............
+    //double* h_A1 = (double*) malloc(sizeof(double) * num_classes * N);
+    //cudaMemcpy(h_A1, d.A1, sizeof(double) * num_classes * N, cudaMemcpyDeviceToHost);
+    //double* h_dA1 = (double*) malloc(sizeof(double) * num_classes * N);
+    //cudaMemcpy(h_dA1, d.dA1, sizeof(double) * num_classes * N, cudaMemcpyDeviceToHost);
+    //for(int i = 0; i < 5; i++){
+    //    std::cout << "i: " << i << ", A1: " << h_A1[i]<< ", dA1: " << h_dA1[i] << std::endl;
+    //}
+    //.............
+    
+    //dZ1
+    gpudSigmoid(d.dA1, d.A1, d.dZ1, num_neurons, N);
+    
+    //.............
+    //double* h_dZ1 = (double*) malloc(sizeof(double) * num_classes * N);
+    //cudaMemcpy(h_dZ1, d.dZ1, sizeof(double) * num_classes * N, cudaMemcpyDeviceToHost);
+    //for(int i = 0; i < 5; i++){
+    //    std::cout << "i: " << i << ", dZ1: " << h_dZ1[i] << std::endl;
+    //}
+    //............
+    
+    //calculate dW1
+    cudaMemcpy(d.dW1, d.W1, sizeof(double) * num_neurons * num_pixels, cudaMemcpyDeviceToDevice);
+    myGEMM(d.dZ1, d.X, d.dW1, &one, &reg, num_neurons, num_pixels, N, false, true);
+    
+    //calculate db1
+    gpuRowSum(d.dZ1, d.db1, num_neurons, N);
+}
 
 /*
  * TODO
  * Train the neural network &nn of rank 0 in parallel. Your MPI implementation
  * should mainly be in this function.
  */
+void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
+                    double learning_rate, double reg,
+                    const int epochs, const int batch_size, bool grad_check, int print_every,
+                    int debug) {
+
+    int rank, num_procs;
+    MPI_SAFE_CALL(MPI_Comm_size(MPI_COMM_WORLD, &num_procs));
+    MPI_SAFE_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &rank));
+
+    int N = (rank == 0)?X.n_cols:0;
+    MPI_SAFE_CALL(MPI_Bcast(&N, 1, MPI_INT, 0, MPI_COMM_WORLD));
+
+    std::ofstream error_file;
+    error_file.open("Outputs/CpuGpuDiff.txt");
+    int print_flag = 0;
+
+    /* HINT: You can obtain a raw pointer to the memory used by Armadillo Matrices
+       for storing elements in a column major way. Or you can allocate your own array
+       memory space and store the elements in a row major way. Remember to update the
+       Armadillo matrices in NeuralNetwork &nn of rank 0 before returning from the function. */
+    int num_pixels = nn.H[0];
+    int num_neurons = nn.H[1];
+    int num_classes = nn.H[2];
+    /* iter is a variable used to manage debugging. It increments in the inner loop
+       and therefore goes from 0 to epochs*num_batches */
+    int iter = 0;
+
+    double *host_dW1 = (double *) malloc(sizeof(double) * num_neurons * num_pixels);
+    double *host_dW2 = (double *) malloc(sizeof(double) * num_classes * num_neurons);
+    double *host_db1 = (double *) malloc(sizeof(double) * num_neurons);
+    double *host_db2 = (double *) malloc(sizeof(double) * num_classes);
+
+    double *host_dW1_red = (double *) malloc(sizeof(double) * num_neurons * num_pixels);
+    double *host_dW2_red = (double *) malloc(sizeof(double) * num_classes * num_neurons);
+    double *host_db1_red = (double *) malloc(sizeof(double) * num_neurons);
+    double *host_db2_red = (double *) malloc(sizeof(double) * num_classes);
+
+    device_cache d(batch_size, num_pixels, num_classes, num_neurons);
+
+    double *X_batch = (double *) malloc(sizeof(double) * num_pixels * batch_size);
+    double *y_batch = (double *) malloc(sizeof(double) * num_classes * batch_size);
+
+    // adjust learning rate and regularization for number of processes
+    //double mod_reg = reg/(double)num_procs;
+
+    for(int epoch = 0; epoch < epochs; ++epoch) {
+        int num_batches = (N + batch_size - 1)/batch_size;
+
+        for(int batch = 0; batch < num_batches; ++batch) {
+            /*
+             * Possible Implementation:
+             * 1. subdivide input batch of images and `MPI_scatter()' to each MPI node
+             * 2. compute each sub-batch of images' contribution to network coefficient updates
+             * 3. reduce the coefficient updates and broadcast to all nodes with `MPI_Allreduce()'
+             * 4. update local network coefficient at each node
+             */
+            int batch_start = batch * batch_size;
+            int in_proc = std::min(batch_size, N - batch_start)/num_procs;
+            
+            MPI_SAFE_CALL(
+                MPI_Scatter( 
+                    X.colptr(batch_start),
+                    num_pixels * in_proc,
+                    MPI_DOUBLE,
+                    X_batch,
+                    num_pixels * in_proc,
+                    MPI_DOUBLE,
+                    0, 
+                    MPI_COMM_WORLD
+            ));
+            MPI_SAFE_CALL(
+                MPI_Scatter(
+                    y.colptr(batch_start),
+                    num_classes * in_proc,
+                    MPI_DOUBLE,
+                    y_batch,
+                    num_classes * in_proc,
+                    MPI_DOUBLE,
+                    0,
+                    MPI_COMM_WORLD
+            ));
+
+            //data transfer
+            checkCudaErrors(cudaMemcpy(d.X, X_batch, sizeof(double) * num_pixels * in_proc, cudaMemcpyHostToDevice));
+            checkCudaErrors(cudaMemcpy(d.y, y_batch, sizeof(double) * num_classes * in_proc, cudaMemcpyHostToDevice));
+            checkCudaErrors(cudaMemcpy(d.W1, nn.W[0].memptr(), sizeof(double) * num_pixels * num_neurons, cudaMemcpyHostToDevice));
+            checkCudaErrors(cudaMemcpy(d.b1, nn.b[0].memptr(), sizeof(double) * num_neurons, cudaMemcpyHostToDevice));
+            checkCudaErrors(cudaMemcpy(d.W2, nn.W[1].memptr(), sizeof(double) * num_neurons * num_classes, cudaMemcpyHostToDevice));
+            checkCudaErrors(cudaMemcpy(d.b2, nn.b[1].memptr(), sizeof(double) * num_classes, cudaMemcpyHostToDevice));
+
+            gpuFeedforward(d, in_proc, nn);
+
+            gpuBackprop(d, in_proc, reg, nn, num_procs);
+
+            //copy gradients to host
+            checkCudaErrors(cudaMemcpy(host_dW1, d.dW1, sizeof(double) * num_pixels * num_neurons, cudaMemcpyDeviceToHost));
+            checkCudaErrors(cudaMemcpy(host_db1, d.db1, sizeof(double) * num_neurons, cudaMemcpyDeviceToHost));
+            checkCudaErrors(cudaMemcpy(host_dW2, d.dW2, sizeof(double) * num_neurons * num_classes, cudaMemcpyDeviceToHost));
+            checkCudaErrors(cudaMemcpy(host_db2, d.db2, sizeof(double) * num_classes, cudaMemcpyDeviceToHost));
+
+            MPI_SAFE_CALL(
+                MPI_Allreduce(
+                    host_dW1,
+                    host_dW1_red,
+                    (num_pixels * num_neurons),
+                    MPI_DOUBLE,
+                    MPI_SUM,
+                    MPI_COMM_WORLD
+            ));
+            MPI_SAFE_CALL(
+                MPI_Allreduce(
+                    host_db1,
+                    host_db1_red,
+                    (num_neurons),
+                    MPI_DOUBLE,
+                    MPI_SUM,
+                    MPI_COMM_WORLD
+            ));
+            MPI_SAFE_CALL(
+                MPI_Allreduce(
+                    host_dW2,
+                    host_dW2_red,
+                    (num_neurons * num_classes),
+                    MPI_DOUBLE,
+                    MPI_SUM,
+                    MPI_COMM_WORLD
+            ));
+            MPI_SAFE_CALL(
+                MPI_Allreduce(
+                    host_db2,
+                    host_db2_red,
+                    (num_classes),
+                    MPI_DOUBLE,
+                    MPI_SUM,
+                    MPI_COMM_WORLD
+            ));
+            //gradient descent
+            nn.W[0] = nn.W[0] - learning_rate * arma::mat(host_dW1_red, nn.W[0].n_rows, nn.W[0].n_cols);
+            nn.b[0] = nn.b[0] - learning_rate * arma::colvec(host_db1_red, nn.b[0].n_rows, nn.b[0].n_cols);
+            nn.W[1] = nn.W[1] - learning_rate * arma::mat(host_dW2_red, nn.W[1].n_rows, nn.W[1].n_cols);
+            nn.b[1] = nn.b[1] - learning_rate * arma::colvec(host_db2_red, nn.b[1].n_rows, nn.b[1].n_cols);
+
+            if(print_every <= 0) {
+                print_flag = batch == 0;
+            } else {
+                print_flag = iter % print_every == 0;
+            }
+
+            /* Following debug routine assumes that you have already updated the arma
+               matrices in the NeuralNetwork nn.  */
+            if(debug && rank == 0 && print_flag) {
+                write_diff_gpu_cpu(nn, iter, error_file);
+            }
+
+            iter++;
+        }
+    }
+
+    free(host_dW1);
+    free(host_db1);
+    free(host_dW2);
+    free(host_db2);
+
+    free(host_dW1_red);
+    free(host_db1_red);
+    free(host_dW2_red);
+    free(host_db2_red);
+
+    free(X_batch);
+    free(y_batch);
+    
+    d.~device_cache();
+
+    error_file.close();
+}
+
+/*
+ * TODO
+ * Train the neural network &nn of rank 0 in parallel. Your MPI implementation
+ * should mainly be in this function.
+ */
+/*
 void feedforward_gpu(dev_cache& c,int D0, int D1,int D2,int D3)
 {
     
@@ -514,6 +765,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
 
     /* iter is a variable used to manage debugging. It increments in the inner loop
        and therefore goes from 0 to epochs*num_batches */
+/*
     int iter = 0;
     int D1 = nn.H[0];        // input feature dimension
     int D2 = nn.H[1];        // hidden layer dimension
@@ -546,7 +798,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
     arma::mat hdb0_l(D2,1);
     arma::mat hdb1_l(D3,1);
 	*/
-
+/*
     for(int epoch = 0; epoch < epochs; ++epoch) {
         int num_batches = (N + batch_size - 1)/batch_size;
         for(int batch = 0; batch < num_batches-1; ++batch) {
@@ -557,6 +809,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
              * 3. reduce the coefficient updates and broadcast to all nodes with `MPI_Allreduce()'
              * 4. update local network coefficient at each node
              */
+/*
             int batch_start = batch *batch_size;
             double reg2=reg/(double)num_procs;
             
@@ -633,6 +886,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
 
             /* Following debug routine assumes that you have already updated the arma
                matrices in the NeuralNetwork nn.  */
+/*
             if(debug && rank == 0 && print_flag) {
                 write_diff_gpu_cpu(nn, iter, error_file);
             }
