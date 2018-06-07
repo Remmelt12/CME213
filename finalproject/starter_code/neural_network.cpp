@@ -364,7 +364,50 @@ void train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
     }
 }
 
-
+void gpuFeedforward(device_cache &d, int N, NeuralNetwork &nn) {
+    int num_neurons = d.num_neurons;
+    int num_classes = d.num_classes;
+    int num_pixels = d.num_pixels;
+    double one = 1.0;
+    double zero = 0.0;
+    
+    // Computing activation from first layer
+    myGEMM(d.W1, d.X, d.A1, &one, &zero, num_neurons, N, num_pixels, false, false);
+    //......
+    //double* h_b1 = (double *) malloc(sizeof(double) * num_neurons);
+    //cudaMemcpy(h_b1, d.b1, sizeof(double) * num_neurons, cudaMemcpyDeviceToHost);
+    //double* h_z1 = (double*) malloc(sizeof(double) * num_neurons * N);
+    //cudaMemcpy(h_z1, d.A1, sizeof(double) * num_neurons * N, cudaMemcpyDeviceToHost); 
+    //for(int i = 0; i < 5; i++){
+    //    std::cout << "i: " << i << ", b1: " << h_b1[i] << std::endl;
+    //    std::cout << "i: " << i << ", z1: " << h_z1[i] << std::endl;
+    //}
+    //.......
+    gpuMatVecSum(d.A1, d.b1, num_neurons, N);
+    //..........
+    //double* h_z1 = (double*) malloc(sizeof(double) * num_neurons * N); 
+    //cudaMemcpy(h_z1, d.A1, sizeof(double) * num_neurons * N, cudaMemcpyDeviceToHost);
+    //for(int i = 0; i < 5; i++){
+    //    std::cout << "i: " << i << ", UNsigmoided:" << h_z1[i] << std::endl;
+    //}
+    //.......... 
+    
+    gpuSigmoid(d.A1, num_neurons, N);
+    
+    //...........
+    //double* h_a1 = (double*) malloc(sizeof(double) * num_neurons * N);
+    //cudaMemcpy(h_a1, d.A1, sizeof(double) * num_neurons * N, cudaMemcpyDeviceToHost);
+    //for(int i = 0; i < 5; i++){
+    //    std::cout << "i: " << i << ", sigmoided:" << h_a1[i] << std::endl;
+    //}
+    //..........
+    
+    // Computing activation from second layer
+    myGEMM(d.W2, d.A1, d.A2, &one, &zero, num_classes, N, num_neurons, false, false);
+    gpuMatVecSum(d.A2, d.b2, num_classes, N);
+    gpuSoftmax(d.A2, num_classes, N);
+    cudaMemcpy(d.yh, d.A2, sizeof(double) * num_classes * N, cudaMemcpyDeviceToDevice);
+}
 void gpuBackprop(device_cache &d, int N, double regularization, NeuralNetwork &nn, int num_processes) {
     int num_neurons = d.num_neurons;
     int num_classes = d.num_classes;
