@@ -172,53 +172,6 @@ void write_diff_gpu_cpu(NeuralNetwork& nn, int iter,
 }
 
 /* CPU IMPLEMENTATIONS */
-void feedforward_gpu(dev_cache& c,int D0, int D1,int D2,int D3)
-{
-    
-
-        std::vector<double> test_Y(D0*D3); 
-        std::vector<double> test_A0(D0*D2); 
-        std::vector<double> test_W0(D1*D2);
-        std::vector<double> test_W1(D3*D2);
-        std::vector<double> test_A1(D0*D2);
-        std::vector<double> test_B1(D0*D3);
-
-		//cudaMemcpy(&test_W0[0],cache.dW0,sizeof(double)* D1 * D2,cudaMemcpyDeviceToHost);
-		//std::cout<< "feed W0: "<<test_W0[0] <<std::endl;  
-        //std::vector<double> testZ0(D2*D0); 
-		//dZ1=dB0
-        double alpha=1.0;
-        double beta=0.0;
-		myGEMM(c.W0,c.X,c.A0,&alpha,&beta,D2,D0,D1);
-
-		elem_add(c.A0,c.B0,c.A0,alpha,alpha,D2,D0);
-		cudaMemcpy(&test_A0[0],c.A0,sizeof(double)* D2 * D0,cudaMemcpyDeviceToHost);
-		std::cout<< "feed A0: "<<test_A0[0] <<std::endl;  
-		
-		//dB0=sigmoid(dB0)
-		sigmoid_p(c.Z0,c.A0,D2,D0);
-		//cudaMemcpy(&test_A0[0],c.dA0,sizeof(double)* D2 * D0,cudaMemcpyDeviceToHost);
-		//std::cout<< "feed A0: "<<test_A0[0] <<std::endl;  
-
-		//dA0=dB0
-		//cudaMemcpy(dA0,dZ1,sizeof(double)*nn.H[1]*D0,cudaMemcpyDeviceToDevice);
-
-		//dB1=dW1*dA0+dB1
-		myGEMM(c.W1,c.A0,c.A1,&alpha,&beta,D3,D0,D2);
-		elem_add(c.A1,c.B1,c.A1,alpha,alpha,D3,D0);
-		cudaMemcpy(&test_A1[0],c.A1,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
-		std::cout<< "A1: "<<test_A1[0]<<std::endl; 
-
-		//dY=softmax(dB1)
-		softmax_p(c.A1,c.A1,D3,D0);
-		cudaMemcpy(c.Yc,c.A1,sizeof(double)*D3*D0,cudaMemcpyDeviceToDevice);
-        cudaMemcpy(&test_Y[0],c.Yc,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
-        std::cout<< "feed Yc: "<<test_Y[0]<<std::endl; 
-		//cudaMemcpy(&test_Y[0],c.dY,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
-		//std::cout<< "Y: "<<test_Y[0]<<std::endl; 
-
-
-}
 void feedforward(NeuralNetwork& nn, const arma::mat& X, struct cache& cache) {
     cache.z.resize(2);
     cache.a.resize(2);
@@ -251,78 +204,6 @@ void feedforward(NeuralNetwork& nn, const arma::mat& X, struct cache& cache) {
  * @params bpcache : Output of feedforward.
  * @params bpgrads: Returns the gradients for each param
  */
-void backprop_gpu(dev_cache& c,NeuralNetwork& nn,double reg,int D0,int batch_size)
-{
-   int D1 = nn.H[0];               // input feature dimension
-   int D2 = nn.W[0].n_rows;        // hidden layer dimension
-   int D3 = nn.W[1].n_rows;        // output layer dimension
-   std::vector<double> test_Z1(D2*D0); 
-   std::vector<double> test_W0(D2*D1); 
-   std::vector<double> test_A0(D2*D0); 
-   std::vector<double> test_W1(D2*D3); 
-   std::vector<double> test_B1(D3); 
-   std::vector<double> test_DB0(D2); 
-   std::vector<double> test_Y(D3*D0); 
-
-   double alpha =1.0/((double)batch_size);
-   double beta = -1.0/((double)batch_size);
-
-   //cudaMemcpy(&test_Y[0],c.dY,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
-   //std::cout<< "back Y: "<<test_Y[0]<<std::endl; 
-   
-   //cudaMemcpy(&test_Y[0],c.dYc,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
-   //std::cout<< "back Yc: "<<test_Y[0]<<std::endl; 
-
-   elem_add(c.Yc,c.Y,c.diff,alpha,beta,D3,D0);
-   //cudaMemcpy(&test_Y[0],c.dA0,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
-   //std::cout<< "back A0: "<<test_Y[0]<<std::endl; 
-
-
-   alpha=1.0;
-   beta = 0.0;
-   
-   cudaMemcpy(c.DW1,c.W1,sizeof(double)*D3*D2,cudaMemcpyDeviceToDevice);
-   myGEMM(c.diff,c.A0,c.DW1,&alpha,&reg,D3,D2,D0,false,true);
-   
-   //cudaMemcpy(&test_diff[0],c.diff,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
-   //std::cout<< "diff: "<<test_diff[100]<<std::endl; 
-   //
-   //dDW1=dW1
-   //cudaMemcpy(&test_W1[0],c.dDW1,sizeof(double)* D3 * D2,cudaMemcpyDeviceToHost);
-   //std::cout<< "DW1: "<<test_W1[0]<<std::endl; 
-
-   //dDB1=rowsum(diff)
-   row_sum(c.diff,c.DB1,D3,D0);
-   cudaMemcpy(&test_B1[0],c.DB1,sizeof(double)* D3,cudaMemcpyDeviceToHost);
-   std::cout<< "DB1: "<<test_B1[0]<<std::endl; 
-
-   //dDA0=dW1.T*diff
-   beta=0.0;
-   myGEMM(c.W1,c.diff,c.DA0, &alpha, &beta,D3,D0,D2,true,false);
-   cudaMemcpy(&test_A0[0],c.DA0,sizeof(double)*D2*D0,cudaMemcpyDeviceToHost);
-   std::cout<< "DA0: "<<test_A0[0]<<std::endl; 
-
-   //dA0=1-dA0
-   alpha=1.0;
-   beta=-1.0;
-   
-   sigmoid_back(c.DA0, c.A0, c.DZ1, D2, D0);
-
-   //dW0=dZ1.T*dX.T+reg*dW0
-   cudaMemcpy(&test_Z1[0],c.DZ1,sizeof(double)*D2*D0,cudaMemcpyDeviceToHost);
-   std::cout<< "DZ1: "<<test_Z1[0]<<std::endl; 
-   cudaMemcpy(c.DW0,c.W0,sizeof(double)*D3*D2,cudaMemcpyDeviceToDevice);
-
-   myGEMM(c.DZ1,c.X,c.DW0,&alpha,&reg,D2,D0,D1,false,true);
-   cudaMemcpy(&test_W0[0],c.DW0,sizeof(double)*D2*D1,cudaMemcpyDeviceToHost);
-   std::cout<< "DW0: "<<test_W0[0]<<std::endl; 
-
-   //dDB0=rowsum(dZ1)
-   row_sum(c.DZ1,c.DB0,D2,D0);
-   cudaMemcpy(&test_DB0[0],c.DB0,sizeof(double)*D2,cudaMemcpyDeviceToHost);
-   std::cout<< "DB0: "<<test_DB0[0]<<std::endl; 
-
-}
 
 void backprop(NeuralNetwork& nn, const arma::mat& y, double reg,
               const struct cache& bpcache, struct grads& bpgrads) {
@@ -488,6 +369,125 @@ void train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
  * Train the neural network &nn of rank 0 in parallel. Your MPI implementation
  * should mainly be in this function.
  */
+void feedforward_gpu(dev_cache& c,int D0, int D1,int D2,int D3)
+{
+    
+
+        std::vector<double> test_Y(D0*D3); 
+        std::vector<double> test_A0(D0*D2); 
+        std::vector<double> test_W0(D1*D2);
+        std::vector<double> test_W1(D3*D2);
+        std::vector<double> test_A1(D0*D2);
+        std::vector<double> test_B1(D0*D3);
+
+		//cudaMemcpy(&test_W0[0],cache.dW0,sizeof(double)* D1 * D2,cudaMemcpyDeviceToHost);
+		//std::cout<< "feed W0: "<<test_W0[0] <<std::endl;  
+        //std::vector<double> testZ0(D2*D0); 
+		//dZ1=dB0
+        double alpha=1.0;
+        double beta=0.0;
+		myGEMM(c.W0,c.X,c.A0,&alpha,&beta,D2,D0,D1);
+
+		elem_add(c.A0,c.B0,c.A0,alpha,alpha,D2,D0);
+		cudaMemcpy(&test_A0[0],c.A0,sizeof(double)* D2 * D0,cudaMemcpyDeviceToHost);
+		std::cout<< "feed A0: "<<test_A0[0] <<std::endl;  
+		
+		//dB0=sigmoid(dB0)
+		sigmoid_p(c.A0,D2,D0);
+		//cudaMemcpy(&test_A0[0],c.dA0,sizeof(double)* D2 * D0,cudaMemcpyDeviceToHost);
+		//std::cout<< "feed A0: "<<test_A0[0] <<std::endl;  
+
+		//dA0=dB0
+		//cudaMemcpy(dA0,dZ1,sizeof(double)*nn.H[1]*D0,cudaMemcpyDeviceToDevice);
+
+		//dB1=dW1*dA0+dB1
+		myGEMM(c.W1,c.A0,c.A1,&alpha,&beta,D3,D0,D2);
+		elem_add(c.A1,c.B1,c.A1,alpha,alpha,D3,D0);
+		cudaMemcpy(&test_A1[0],c.A1,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
+		std::cout<< "A1: "<<test_A1[0]<<std::endl; 
+
+		//dY=softmax(dB1)
+		softmax_p(c.A1,D3,D0);
+		cudaMemcpy(c.Yc,c.A1,sizeof(double)*D3*D0,cudaMemcpyDeviceToDevice);
+        cudaMemcpy(&test_Y[0],c.Yc,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
+        std::cout<< "feed Yc: "<<test_Y[0]<<std::endl; 
+		//cudaMemcpy(&test_Y[0],c.dY,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
+		//std::cout<< "Y: "<<test_Y[0]<<std::endl; 
+
+
+}
+
+void backprop_gpu(dev_cache& c,NeuralNetwork& nn,double reg,int D0,int batch_size)
+{
+   int D1 = nn.H[0];               // input feature dimension
+   int D2 = nn.W[0].n_rows;        // hidden layer dimension
+   int D3 = nn.W[1].n_rows;        // output layer dimension
+   std::vector<double> test_Z1(D2*D0); 
+   std::vector<double> test_W0(D2*D1); 
+   std::vector<double> test_A0(D2*D0); 
+   std::vector<double> test_W1(D2*D3); 
+   std::vector<double> test_B1(D3); 
+   std::vector<double> test_DB0(D2); 
+   std::vector<double> test_Y(D3*D0); 
+
+   std::cout<< "batch_size: "<<batch_size <<std::endl; 
+   double alpha =1.0/((double) batch_size);
+   double beta = -alpha;
+
+   //cudaMemcpy(&test_Y[0],c.dY,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
+   //std::cout<< "back Y: "<<test_Y[0]<<std::endl; 
+   
+   //cudaMemcpy(&test_Y[0],c.dYc,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
+   //std::cout<< "back Yc: "<<test_Y[0]<<std::endl; 
+
+   elem_add(c.Yc,c.Y,c.diff,alpha,beta,D3,D0);
+   //cudaMemcpy(&test_Y[0],c.dA0,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
+   //std::cout<< "back A0: "<<test_Y[0]<<std::endl; 
+
+
+   alpha=1.0;
+   beta = 0.0;
+   
+   cudaMemcpy(c.DW1,c.W1,sizeof(double)*D3*D2,cudaMemcpyDeviceToDevice);
+   myGEMM(c.diff,c.A0,c.DW1,&alpha,&reg,D3,D2,D0,false,true);
+   
+   //cudaMemcpy(&test_diff[0],c.diff,sizeof(double)* D3 * D0,cudaMemcpyDeviceToHost);
+   //std::cout<< "diff: "<<test_diff[100]<<std::endl; 
+   //
+   //dDW1=dW1
+   //cudaMemcpy(&test_W1[0],c.dDW1,sizeof(double)* D3 * D2,cudaMemcpyDeviceToHost);
+   //std::cout<< "DW1: "<<test_W1[0]<<std::endl; 
+
+   //dDB1=rowsum(diff)
+   row_sum(c.diff,c.DB1,D3,D0);
+   cudaMemcpy(&test_B1[0],c.DB1,sizeof(double)* D3,cudaMemcpyDeviceToHost);
+   std::cout<< "DB1: "<<test_B1[0]<<std::endl; 
+
+   //dDA0=dW1.T*diff
+   beta=0.0;
+   myGEMM(c.W1,c.diff,c.DA0, &alpha, &beta,D3,D2,D0,true,false);
+   cudaMemcpy(&test_A0[0],c.DA0,sizeof(double)*D2*D0,cudaMemcpyDeviceToHost);
+   std::cout<< "DA0: "<<test_A0[0]<<std::endl; 
+
+   //dA0=1-dA0
+   alpha=1.0;
+   beta=-1.0;
+   
+   sigmoid_back(c.DA0, c.A0, c.DZ1, D2, D0);
+
+   //dW0=dZ1.T*dX.T+reg*dW0
+   cudaMemcpy(c.DW0,c.W0,sizeof(double)*D1*D2,cudaMemcpyDeviceToDevice);
+
+   myGEMM(c.DZ1,c.X,c.DW0,&alpha,&reg,D2,D0,D1,false,true);
+   cudaMemcpy(&test_W0[0],c.DW0,sizeof(double)*D2*D1,cudaMemcpyDeviceToHost);
+   std::cout<< "DW0: "<<test_W0[0]<<std::endl; 
+
+   //dDB0=rowsum(dZ1)
+   row_sum(c.DZ1,c.DB0,D2,D0);
+   cudaMemcpy(&test_DB0[0],c.DB0,sizeof(double)*D2,cudaMemcpyDeviceToHost);
+   std::cout<< "DB0: "<<test_DB0[0]<<std::endl; 
+
+}
 void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
                     double learning_rate, double reg,
                     const int epochs, const int batch_size, bool grad_check, int print_every,
@@ -518,17 +518,23 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
     int D1 = nn.H[0];        // input feature dimension
     int D2 = nn.H[1];        // hidden layer dimension
     int D3 = nn.H[2];        // output layer dimension
+    int D0 = batch_size/num_procs;
 
     
-	double *host_dW1 = (double *) malloc(sizeof(double) * D2 * D1);
-    double *host_dW2 = (double *) malloc(sizeof(double) * D2*D3);
-    double *host_db1 = (double *) malloc(sizeof(double) * D2);
-    double *host_db2 = (double *) malloc(sizeof(double) * D3);
+	double *hdw0 = (double *) malloc(sizeof(double) * D2 * D1);
+    double *hdw1 = (double *) malloc(sizeof(double) * D2*D3);
+    double *hdb0 = (double *) malloc(sizeof(double) * D2);
+    double *hdb1 = (double *) malloc(sizeof(double) * D3);
+                
+    double *hdw0_l = (double *) malloc(sizeof(double) * D2 * D1);
+    double *hdw1_l = (double *) malloc(sizeof(double) * D2*D3);
+    double *hdb0_l = (double *) malloc(sizeof(double) * D2);
+    double *hdb1_l = (double *) malloc(sizeof(double) * D3);
 
-    double *host_dW1_red = (double *) malloc(sizeof(double) * D2 * D1);
-    double *host_dW2_red = (double *) malloc(sizeof(double) * D2*D3);
-    double *host_db1_red = (double *) malloc(sizeof(double) * D2);
-    double *host_db2_red = (double *) malloc(sizeof(double) * D3);
+    double* x_sub= (double *) malloc(sizeof(double) * D1 * D0); 
+    double* y_sub=(double *) malloc(sizeof(double) * D3 * D0); 
+    dev_cache cache(D0,D1,D2,D3);
+
     /*
     arma::mat hdw0(D2,D1);
     arma::mat hdw1(D3,D2);
@@ -543,7 +549,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
 
     for(int epoch = 0; epoch < epochs; ++epoch) {
         int num_batches = (N + batch_size - 1)/batch_size;
-        for(int batch = 0; batch < num_batches; ++batch) {
+        for(int batch = 0; batch < num_batches-1; ++batch) {
             /*
              * Possible Implementation:
              * 1. subdivide input batch of images and `MPI_scatter()' to each MPI node
@@ -552,50 +558,42 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
              * 4. update local network coefficient at each node
              */
             int batch_start = batch *batch_size;
-            double reg2=reg/num_procs_d;
+            double reg2=reg/(double)num_procs;
             
             
             int num_elem=std::min(N-batch*batch_size,batch_size);
             
-            int D0=num_elem/num_procs;
-
-	        dev_cache cache(D0,D1,D2,D3);
-
-            double* x_sub= (double *) malloc(sizeof(double) * D1 * D0); 
-            double* y_sub=(double *) malloc(sizeof(double) * D3 * D0); 
+            D0=num_elem/num_procs;
             
             arma::mat b0_rep = arma::repmat(nn.b[0], 1, D0);
             arma::mat b1_rep = arma::repmat(nn.b[1], 1, D0);
-            
-            double * b1_=b1_rep.memptr();
-            double * b0_=b0_rep.memptr();
 
             
             MPI_SAFE_CALL(MPI_Scatter(X.colptr(batch_start),D0*D1,MPI_DOUBLE
-                                        ,&x_sub[0],D0*D1,MPI_DOUBLE,0,MPI_COMM_WORLD));
+                                        ,x_sub,D0*D1,MPI_DOUBLE,0,MPI_COMM_WORLD));
                         
             MPI_SAFE_CALL(MPI_Scatter(y.colptr(batch_start),D0*D3,MPI_DOUBLE
-                                        ,&y_sub[0],D0*D3,MPI_DOUBLE,0,MPI_COMM_WORLD));
+                                        ,y_sub,D0*D3,MPI_DOUBLE,0,MPI_COMM_WORLD));
 
 
             //dX=X
-            cudaMemcpy(cache.X, &x_sub[0], sizeof(double) * D1 * D0, cudaMemcpyHostToDevice);
+            checkCudaErrors(cudaMemcpy(cache.X, x_sub, sizeof(double) * D1 * D0, cudaMemcpyHostToDevice));
             
             //dW0=W0
-            cudaMemcpy(cache.W0, nn.W[0].memptr(), sizeof(double) * D2 * D1, cudaMemcpyHostToDevice);
+            checkCudaErrors(cudaMemcpy(cache.W0, nn.W[0].memptr(), sizeof(double) * D2 * D1, cudaMemcpyHostToDevice));
 
             //db0=b0
-            cudaMemcpy(cache.B0, b0_, sizeof(double) * D2 * D0, cudaMemcpyHostToDevice);
+            checkCudaErrors(cudaMemcpy(cache.B0, b0_rep.memptr(), sizeof(double) * D2 * D0, cudaMemcpyHostToDevice));
 
 
             //dW1=W0
-            cudaMemcpy(cache.W1, nn.W[1].memptr(), sizeof(double) * D3 * D2, cudaMemcpyHostToDevice);
+            checkCudaErrors(cudaMemcpy(cache.W1, nn.W[1].memptr(), sizeof(double) * D3 * D2, cudaMemcpyHostToDevice));
 
             //db1=b1
-            cudaMemcpy(cache.B1, b1_, sizeof(double) * D3 * D0, cudaMemcpyHostToDevice);
+            checkCudaErrors(cudaMemcpy(cache.B1, b1_rep.memptr(), sizeof(double) * D3 * D0, cudaMemcpyHostToDevice));
 
             //dY= true Y's
-            cudaMemcpy(cache.Y, &y_sub[0], sizeof(double) * D2 * D0, cudaMemcpyHostToDevice);
+            //checkCudaErrors(cudaMemcpy(cache.Y, y_sub, sizeof(double) * D3 * D0, cudaMemcpyHostToDevice));
 
             
             //dB0=dW0*dX+dB0
@@ -608,20 +606,23 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             
             //dDW1=diff*dA0.T+reg*dDW1
 
-            cudaMemcpy(hdw0_l,cache.DW0,sizeof(double) * D2 * D1, cudaMemcpyDeviceToHost);
-            cudaMemcpy(hdw1_l,cache.DW1,sizeof(double) * D3 * D2, cudaMemcpyDeviceToHost);
-            cudaMemcpy(hdb0_l,cache.DB0,sizeof(double) * D2 , cudaMemcpyDeviceToHost);
-            cudaMemcpy(hdb1_l,cache.DB1,sizeof(double) * D3 , cudaMemcpyDeviceToHost);
+            checkCudaErrors(cudaMemcpy(hdw0_l,cache.DW0,sizeof(double) * D2 * D1, cudaMemcpyDeviceToHost));
+            checkCudaErrors(cudaMemcpy(hdw1_l,cache.DW1,sizeof(double) * D3 * D2, cudaMemcpyDeviceToHost));
+            checkCudaErrors(cudaMemcpy(hdb0_l,cache.DB0,sizeof(double) * D2 , cudaMemcpyDeviceToHost));
+            checkCudaErrors(cudaMemcpy(hdb1_l,cache.DB1,sizeof(double) * D3 , cudaMemcpyDeviceToHost));
            
-            MPI_SAFE_CALL(MPI_Allreduce(hdw0_l.memptr(),hdw0, D2 * D1, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD));
-            MPI_SAFE_CALL(MPI_Allreduce(hdw1_l.memptr(),hdw1, D3 * D2, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD));
-            MPI_SAFE_CALL(MPI_Allreduce(hdb0_l.memptr(),hdb0.memptr(), D2, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD));
-            MPI_SAFE_CALL(MPI_Allreduce(hdb1_l.memptr(),hdb1.memptr(), D3, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD));
+            MPI_SAFE_CALL(MPI_Allreduce(hdw0_l,hdw0, D2 * D1, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD));
+            MPI_SAFE_CALL(MPI_Allreduce(hdw1_l,hdw1, D3 * D2, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD));
+            MPI_SAFE_CALL(MPI_Allreduce(hdb0_l,hdb0, D2, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD));
+            MPI_SAFE_CALL(MPI_Allreduce(hdb1_l,hdb1, D3, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD));
+            std::cout<< "W0 before:"<<nn.W[0][0]<<std::endl; 
 
-            nn.W[0]-=(learning_rate)*hdw0;
-            nn.W[1]-=(learning_rate)*hdw1;
-            nn.b[0]-=(learning_rate)*hdb0;
-            nn.b[1]-=(learning_rate)*hdb1;
+            nn.W[0]=nn.W[0]-(learning_rate)*arma::mat(hdw0,nn.W[0].n_rows,nn.W[0].n_cols);
+            nn.W[1]=nn.W[1]-(learning_rate)*arma::mat(hdw1,nn.W[1].n_rows,nn.W[1].n_cols);
+            nn.b[0]=nn.b[0]-(learning_rate)*arma::mat(hdb0,nn.b[0].n_rows,nn.b[0].n_cols);
+            nn.b[1]=nn.b[1]-(learning_rate)*arma::mat(hdb1,nn.b[1].n_rows,nn.b[1].n_cols);
+
+            std::cout<< "W0 after:"<<nn.W[0][0]<<std::endl; 
             
 
             if(print_every <= 0) {
@@ -639,5 +640,18 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             iter++;
         }
     }
+
+    free(hdw0); 
+    free(hdw1);
+    free(hdb0);
+    free(hdb1); 
+
+    free(hdw0_l);
+    free(hdw1_l);
+    free(hdb0_l);
+    free(hdb1_l);
+
+    free(x_sub);
+    free(y_sub);
     error_file.close();
 }

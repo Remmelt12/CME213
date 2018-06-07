@@ -42,9 +42,9 @@ inline double stop_timer(event_pair* p) {
 int useless_gpu_add_one(int t);
 
 
-void sigmoid_p(const double* Z, double* A,int M, int N);
+void sigmoid_p( double* A,int M, int N);
 
-void softmax_p(const double* Z, double* A,int M, int N);
+void softmax_p(double* A,int M, int N);
 
 void row_sum(double* W, double* Y, int M, int N);
 

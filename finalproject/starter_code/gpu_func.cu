@@ -46,6 +46,7 @@ void myGEMMkernel(double* A, double* B, double* C, double alpha, double beta, in
 {
     int row = blockIdx.x * blockDim.x + threadIdx.x;
     int col = blockIdx.y * blockDim.y + threadIdx.y;
+    
     if (row < M && col < N) {
         int c_ind = row + (col * M);
         double dot_prod = 0.0;
@@ -97,7 +98,7 @@ void myGEMMkernel(double* A, double* B, double* C, double alpha, double beta, in
         }
     }
         C[col*M+row] =alpha*inner_prod+beta*C[col*M+row];
-        */
+      */  
 
 }
 
@@ -143,7 +144,7 @@ void softmax_kernel(double* A,int M, int N)
     }*/
 }
 
-void softmax_p(const double* Z, double* A,int M, int N)
+void softmax_p(double* A,int M, int N)
 {
     dim3 dimBlock(192);
     dim3 dimGrid((N+dimBlock.y-1)/dimBlock.x);
@@ -163,7 +164,7 @@ void sigmoid_kernel(double* A,int M,int N)
     }
 }
 
-void sigmoid_p(const double* Z, double* A,int M, int N)
+void sigmoid_p(double* A,int M, int N)
 {
     dim3 dimBlock(32,6);
     dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
@@ -267,7 +268,7 @@ void sigmoid_back_kernel(double *A, double *B, double *C, int M, int N) {
 
 /** Routine for derivative of sigmoid */
 void sigmoid_back(double *A, double *B, double *C, int M, int N) {
-    dim3 dimBlock(32,32);
+    dim3 dimBlock(32,6);
     dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
     sigmoid_back_kernel<<< dimGrid, dimBlock >>>(A, B, C, M, N);
 }
