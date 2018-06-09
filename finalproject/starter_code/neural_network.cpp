@@ -458,8 +458,8 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
     int D3 = nn.H[2];        // output layer dimension
     int D0 = batch_size/num_procs;
     
-    double* x_sub= (double *) malloc(sizeof(double) * D1 * D0); 
-    double* y_sub=(double *) malloc(sizeof(double) * D3 * D0); 
+    std::vector<double>  x_sub(D1*D0); 
+    std::vector<double>  y_sub(D3*D0); 
     device_cache d(D0, D1, D3, D2);
 
     
@@ -491,26 +491,20 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             
             D0=num_elem/num_procs;
             
-            arma::mat b0_rep = arma::repmat(nn.b[0], 1, D0);
-            arma::mat b1_rep = arma::repmat(nn.b[1], 1, D0);
-
-            
             MPI_SAFE_CALL(MPI_Scatter(X.colptr(batch_start),D0*D1,MPI_DOUBLE
-                                        ,x_sub,D0*D1,MPI_DOUBLE,0,MPI_COMM_WORLD));
+                                        ,&x_sub[0],D0*D1,MPI_DOUBLE,0,MPI_COMM_WORLD));
                         
             MPI_SAFE_CALL(MPI_Scatter(y.colptr(batch_start),D0*D3,MPI_DOUBLE
-                                        ,y_sub,D0*D3,MPI_DOUBLE,0,MPI_COMM_WORLD));
+                                        ,&y_sub[0],D0*D3,MPI_DOUBLE,0,MPI_COMM_WORLD));
 
-            checkCudaErrors(cudaMemcpy(d.X, x_sub, sizeof(double) * D1 * D0, cudaMemcpyHostToDevice));
-            checkCudaErrors(cudaMemcpy(d.y, y_sub, sizeof(double) * D3 * D0, cudaMemcpyHostToDevice));
+            checkCudaErrors(cudaMemcpy(d.X, &x_sub[0], sizeof(double) * D1 * D0, cudaMemcpyHostToDevice));
+            checkCudaErrors(cudaMemcpy(d.y, &y_sub[0], sizeof(double) * D3 * D0, cudaMemcpyHostToDevice));
             checkCudaErrors(cudaMemcpy(d.W1, nn.W[0].memptr(), sizeof(double) *D1 * D2, cudaMemcpyHostToDevice));
             checkCudaErrors(cudaMemcpy(d.b1, nn.b[0].memptr(), sizeof(double) * D2, cudaMemcpyHostToDevice));
             checkCudaErrors(cudaMemcpy(d.W2, nn.W[1].memptr(), sizeof(double) * D2 * D3, cudaMemcpyHostToDevice));
             checkCudaErrors(cudaMemcpy(d.b2, nn.b[1].memptr(), sizeof(double) * D3, cudaMemcpyHostToDevice));
 
             feedforward_gpu(d,nn,reg2,D0,num_elem);
-            
-            //backprop_gpu(d,nn,reg2,D0,num_elem);
             
             checkCudaErrors(cudaMemcpy(hdw0_l.memptr(), d.dW1, sizeof(double) * D1*D2, cudaMemcpyDeviceToHost));
             checkCudaErrors(cudaMemcpy(hdb0_l.memptr(), d.db1, sizeof(double) * D2, cudaMemcpyDeviceToHost));
@@ -546,9 +540,6 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
         }
     }
 
-
-    free(x_sub);
-    free(y_sub);
     error_file.close();
 }
 

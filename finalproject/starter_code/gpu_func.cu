@@ -7,6 +7,8 @@
 #include <cmath>
 
 #define BLOCK_SIZE 16
+#define BLOCK_X 32
+#define BLOCK_Y 32
 /*
 typedef struct {
      int width;
@@ -118,6 +120,33 @@ void MatMul(const double* A, const double* B, double* C)
 }
 */
 __global__
+void GEMM_shared(double* A, double* B,double*C, double alpha, double beta, int M, int N,
+        int K)
+{
+   const unsigned int bx = BLOCK_X, by = BLOCK_Y;
+   const unsigned int tx = threadIdx.x, ty = threadIdx.y;
+   const unsigned int I = blockIdx.x*bx + tx, J = blockIdx.y*by + ty;
+   const unsigned int gx = gridDim.x, gy = gridDim.y;
+   __shared__ double Asub[BLOCK_X][BLOCK_Y];
+   __shared__ double Bsub[BLOCK_X][BLOCK_Y];
+
+   if(I<M && J<N)
+   {
+       double c = 0.0;
+       for (unsigned int k=0; k < gy; k++){
+           Asub[tx][ty] = A[ J*M+k*by+ty];
+           Bsub[ty][tx] = B[J+N*(k*bx+tx)];
+            __syncthreads(); // Synchronizes all threads in a block
+          for (unsigned int kk=0; kk< bx; kk++){
+               c +=Asub[kk][tx]*Bsub[kk][ty];
+          }
+           __syncthreads(); // Avoids memory hazards
+          }
+     C[J*M+I] = alpha*c+beta*C[J*M+I];
+   }
+
+}
+__global__
 void device_add_one(int* d_result, int t) {
     *d_result = t + 1;
 }
@@ -168,7 +197,7 @@ void myGEMMkernel(double* A, double* B, double* C, double alpha, double beta, in
 
 __global__
 void myGEMMkernel1(double* A, double* B, double* C, double alpha, double beta, int M,
-           int N, int K,bool AT,bool BT) 
+           int N, int K) 
 {
     int row = blockIdx.x * blockDim.x + threadIdx.x;
     int col = blockIdx.y * blockDim.y + threadIdx.y;
@@ -192,7 +221,7 @@ void myGEMMkernel1(double* A, double* B, double* C, double alpha, double beta, i
 
 __global__
 void myGEMMkernel2(double* A, double* B, double* C, double alpha, double beta, int M,
-           int N, int K,bool AT,bool BT) 
+           int N, int K) 
 {
     int row = blockIdx.x * blockDim.x + threadIdx.x;
     int col = blockIdx.y * blockDim.y + threadIdx.y;
@@ -216,27 +245,25 @@ void myGEMMkernel2(double* A, double* B, double* C, double alpha, double beta, i
 int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
            int N, int K,bool AT,bool BT) 
 {
-    dim3 dimBlock(32,6);
-    dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
 
 
    
     if(AT){
-        myGEMMkernel1<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K,AT,BT);
+        dim3 dimBlock(32,6);
+        dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
+        myGEMMkernel1<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K);
     }
    
     else if(BT){
-        myGEMMkernel2<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K,AT,BT);
+        dim3 dimBlock(32,6);
+        dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
+        myGEMMkernel2<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K);
     }
     
     else {
-        /*
-        Matrix MA(A,M,K);
-        Matrix MB(B,K,N);
-        Matrix MC(C,M,N);
-        MatMul(MA,MB,MC);
-        */
-        myGEMMkernel<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K,AT,BT);
+        dim3 dimBlock(BLOCK_X,BLOCK_Y);
+        dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
+        GEMM_shared<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K);
     }
         return 0;
 }
@@ -379,7 +406,7 @@ void sigmoid_back_kernel(double *A, double *B, double *C, int M, int N) {
 
 void softmax_p(double* A,int M, int N)
 {
-    dim3 dimBlock(192);
+    dim3 dimBlock(32);
     dim3 dimGrid((N+dimBlock.x-1)/dimBlock.x);
     softmax_kernel<<<dimGrid,dimBlock>>>(A,M,N);
 
