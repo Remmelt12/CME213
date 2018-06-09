@@ -370,43 +370,30 @@ void train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
  * should mainly be in this function.
  */
 
-void feedforward_gpu(device_cache& d,int D0, int D1,int D2,int D3)
-{
-    
-
-        int num_neurons = d.num_neurons;
-        int num_classes = d.num_classes;
-        int num_pixels = d.num_pixels;
-        double one = 1.0;
-        double zero = 0.0;
-
-
-        myGEMM(d.W1, d.X, d.A1, &one, &zero, D2, D0, D1);
-        gpuMatVecSum(d.A1, d.b1, D2, D0);
-		
-        sigmoid_p(d.A1, D2, D0);
-		//dB0=sigmoid(dB0)
-
-		//dA0=dB0
-
-		//dB1=dW1*dA0+dB1
-        myGEMM(d.W2, d.A1, d.A2, &one, &zero, D3, D0, D2);
-
-		//dY=softmax(dB1)
-        gpuMatVecSum(d.A2, d.b2, D3, D0);
-        softmax_p(d.A2, D3, D0);
-        cudaMemcpy(d.yh, d.A2, sizeof(double) * D3 * D0, cudaMemcpyDeviceToDevice);
-
-
-}
-
-void backprop_gpu(device_cache& d,NeuralNetwork& nn,double reg,int D0,int batch_size)
+void feedforward_gpu(device_cache& d,NeuralNetwork& nn,double reg,int D0,int batch_size)
 {
    int D1 = nn.H[0];               // input feature dimension
    int D2 = nn.W[0].n_rows;        // hidden layer dimension
    int D3 = nn.W[1].n_rows;        // output layer dimension
    double one = 1.0;
    double zero = 0.0;
+
+
+   myGEMM(d.W1, d.X, d.A1, &one, &zero, D2, D0, D1);
+   gpuMatVecSum(d.A1, d.b1, D2, D0);
+   
+   sigmoid_p(d.A1, D2, D0);
+   //dB0=sigmoid(dB0)
+
+   //dA0=dB0
+
+   //dB1=dW1*dA0+dB1
+   myGEMM(d.W2, d.A1, d.A2, &one, &zero, D3, D0, D2);
+
+   //dY=softmax(dB1)
+   gpuMatVecSum(d.A2, d.b2, D3, D0);
+   softmax_p(d.A2, D3, D0);
+   cudaMemcpy(d.yh, d.A2, sizeof(double) * D3 * D0, cudaMemcpyDeviceToDevice);
 
    double alpha =1.0/((double) batch_size);
    double beta = -alpha;
@@ -521,9 +508,9 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             checkCudaErrors(cudaMemcpy(d.W2, nn.W[1].memptr(), sizeof(double) * D2 * D3, cudaMemcpyHostToDevice));
             checkCudaErrors(cudaMemcpy(d.b2, nn.b[1].memptr(), sizeof(double) * D3, cudaMemcpyHostToDevice));
 
-            feedforward_gpu(d,D0,D1,D2,D3);
+            feedforward_gpu(d,nn,reg2,D0,num_elem);
             
-            backprop_gpu(d,nn,reg2,D0,num_elem);
+            //backprop_gpu(d,nn,reg2,D0,num_elem);
             
             checkCudaErrors(cudaMemcpy(hdw0_l.memptr(), d.dW1, sizeof(double) * D1*D2, cudaMemcpyDeviceToHost));
             checkCudaErrors(cudaMemcpy(hdb0_l.memptr(), d.db1, sizeof(double) * D2, cudaMemcpyDeviceToHost));
