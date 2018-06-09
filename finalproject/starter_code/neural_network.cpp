@@ -364,120 +364,6 @@ void train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
     }
 }
 
-void gpuFeedforward(device_cache &d, int N, NeuralNetwork &nn) {
-    int num_neurons = d.num_neurons;
-    int num_classes = d.num_classes;
-    int num_pixels = d.num_pixels;
-    double one = 1.0;
-    double zero = 0.0;
-    
-    // Computing activation from first layer
-    myGEMM(d.W1, d.X, d.A1, &one, &zero, num_neurons, N, num_pixels, false, false);
-    //......
-    //double* h_b1 = (double *) malloc(sizeof(double) * num_neurons);
-    //cudaMemcpy(h_b1, d.b1, sizeof(double) * num_neurons, cudaMemcpyDeviceToHost);
-    //double* h_z1 = (double*) malloc(sizeof(double) * num_neurons * N);
-    //cudaMemcpy(h_z1, d.A1, sizeof(double) * num_neurons * N, cudaMemcpyDeviceToHost); 
-    //for(int i = 0; i < 5; i++){
-    //    std::cout << "i: " << i << ", b1: " << h_b1[i] << std::endl;
-    //    std::cout << "i: " << i << ", z1: " << h_z1[i] << std::endl;
-    //}
-    //.......
-    gpuMatVecSum(d.A1, d.b1, num_neurons, N);
-    //..........
-    //double* h_z1 = (double*) malloc(sizeof(double) * num_neurons * N); 
-    //cudaMemcpy(h_z1, d.A1, sizeof(double) * num_neurons * N, cudaMemcpyDeviceToHost);
-    //for(int i = 0; i < 5; i++){
-    //    std::cout << "i: " << i << ", UNsigmoided:" << h_z1[i] << std::endl;
-    //}
-    //.......... 
-    
-    gpuSigmoid(d.A1, num_neurons, N);
-    
-    //...........
-    //double* h_a1 = (double*) malloc(sizeof(double) * num_neurons * N);
-    //cudaMemcpy(h_a1, d.A1, sizeof(double) * num_neurons * N, cudaMemcpyDeviceToHost);
-    //for(int i = 0; i < 5; i++){
-    //    std::cout << "i: " << i << ", sigmoided:" << h_a1[i] << std::endl;
-    //}
-    //..........
-    
-    // Computing activation from second layer
-    myGEMM(d.W2, d.A1, d.A2, &one, &zero, num_classes, N, num_neurons, false, false);
-    gpuMatVecSum(d.A2, d.b2, num_classes, N);
-    gpuSoftmax(d.A2, num_classes, N);
-    cudaMemcpy(d.yh, d.A2, sizeof(double) * num_classes * N, cudaMemcpyDeviceToDevice);
-}
-void gpuBackprop(device_cache &d, int N, double regularization, NeuralNetwork &nn, int num_processes) {
-    int num_neurons = d.num_neurons;
-    int num_classes = d.num_classes;
-    int num_pixels = d.num_pixels;
-    double reg = regularization/ (double) num_processes;
-    double one = 1.0;
-    double zero = 0.0;
-    double Ninv_pos = 1.0/((double) N * (double) num_processes);
-    double Ninv_neg = -1.0*Ninv_pos;
-
-    //find difference between labels and predictions
-    //............
-    //std::cout << "NINVPOS = " << Ninv_pos << std::endl;
-    //double* h_y_h = (double*) malloc(sizeof(double) * num_classes * N);
-    //cudaMemcpy(h_y_h, d.yh, sizeof(double) * num_classes * N, cudaMemcpyDeviceToHost);
-    //double* h_y = (double*) malloc(sizeof(double) * num_classes * N);
-    //cudaMemcpy(h_y, d.y, sizeof(double) * num_classes * N, cudaMemcpyDeviceToHost);
-    //for(int i = 0; i < 5; i++){
-    //    std::cout << "i: " << i << ", true: " << h_y[i] << std::endl;
-    //    std::cout << "i: " << i << ", pred: " << h_y_h[i] << std::endl;
-    //}
-    //............
-    gpuElementwiseSum(d.yh, d.y, d.y_diff, Ninv_pos, Ninv_neg, num_classes, N);
-       
-    //double* h_y_diff = (double*) malloc(sizeof(double) * num_classes * N);
-    //cudaMemcpy(h_y_diff, d.y_diff, sizeof(double) * num_classes * N, cudaMemcpyDeviceToHost);
-    //for(int i = 0; i < 5; i++){
-    //    std::cout << "i: " << i << ", diff: " << h_y_diff[i] << std::endl;
-    //}
-
-    //calculate dW2
-    cudaMemcpy(d.dW2, d.W2, sizeof(double) * num_classes * num_neurons, cudaMemcpyDeviceToDevice);
-    myGEMM(d.y_diff, d.A1, d.dW2, &one, &reg, num_classes, num_neurons, N, false, true);
-
-    //calculate db2
-    gpuRowSum(d.y_diff, d.db2, num_classes, N);
-
-
-    //dA1
-    myGEMM(d.W2, d.y_diff, d.dA1, &one, &zero, num_neurons, N, num_classes, true, false);
-    
-    //.............
-    //double* h_A1 = (double*) malloc(sizeof(double) * num_classes * N);
-    //cudaMemcpy(h_A1, d.A1, sizeof(double) * num_classes * N, cudaMemcpyDeviceToHost);
-    //double* h_dA1 = (double*) malloc(sizeof(double) * num_classes * N);
-    //cudaMemcpy(h_dA1, d.dA1, sizeof(double) * num_classes * N, cudaMemcpyDeviceToHost);
-    //for(int i = 0; i < 5; i++){
-    //    std::cout << "i: " << i << ", A1: " << h_A1[i]<< ", dA1: " << h_dA1[i] << std::endl;
-    //}
-    //.............
-    
-    //dZ1
-    gpudSigmoid(d.dA1, d.A1, d.dZ1, num_neurons, N);
-    
-    //.............
-    //double* h_dZ1 = (double*) malloc(sizeof(double) * num_classes * N);
-    //cudaMemcpy(h_dZ1, d.dZ1, sizeof(double) * num_classes * N, cudaMemcpyDeviceToHost);
-    //for(int i = 0; i < 5; i++){
-    //    std::cout << "i: " << i << ", dZ1: " << h_dZ1[i] << std::endl;
-    //}
-    //............
-    
-    //calculate dW1
-    cudaMemcpy(d.dW1, d.W1, sizeof(double) * num_neurons * num_pixels, cudaMemcpyDeviceToDevice);
-    myGEMM(d.dZ1, d.X, d.dW1, &one, &reg, num_neurons, num_pixels, N, false, true);
-    
-    //calculate db1
-    gpuRowSum(d.dZ1, d.db1, num_neurons, N);
-}
-
 /*
  * TODO
  * Train the neural network &nn of rank 0 in parallel. Your MPI implementation
@@ -508,7 +394,7 @@ void feedforward_gpu(device_cache& d,int D0, int D1,int D2,int D3)
 
 		//dY=softmax(dB1)
         gpuMatVecSum(d.A2, d.b2, D3, D0);
-        gpuSoftmax(d.A2, D3, D0);
+        softmax_p(d.A2, D3, D0);
         cudaMemcpy(d.yh, d.A2, sizeof(double) * D3 * D0, cudaMemcpyDeviceToDevice);
 
 
@@ -535,12 +421,6 @@ void backprop_gpu(device_cache& d,NeuralNetwork& nn,double reg,int D0,int batch_
    
 
    //dDB1=rowsum(diff)
-   row_sum(d.y_diff, d.db2, D3, D0);
-
-   cudaMemcpy(d.dW2, d.W2, sizeof(double) * D3 * D2, cudaMemcpyDeviceToDevice);
-   myGEMM(d.y_diff, d.A1, d.dW2, &one, &reg, D3, D2, D0, false, true);
-
-   //calculate db2
    row_sum(d.y_diff, d.db2, D3, D0);
 
    //dDA0=dW1.T*diff

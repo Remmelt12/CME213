@@ -37,38 +37,6 @@ int useless_gpu_add_one(int t) {
 }
 
 __global__
-void myGEMM_kernel(double* A, double* B, double* C,
-                   double alpha, double beta,
-                   int M, int N, int K,
-                   bool AT, bool BT) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    int col = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (row < M && col < N) {
-        int c_ind = row + (col * M);
-        double dot_prod = 0.0;
-        int a_ind;
-        int b_ind;
-        for(int i = 0; i < K; i++) {
-            if (AT)
-                a_ind = (row*K) + i;
-            else
-                a_ind = row + (i*M);
-            if (BT)
-                b_ind = col + (i*N);
-            else
-                b_ind = i + (col * K);
-            dot_prod += A[a_ind] * B[b_ind];
-        }
-        C[c_ind] = (alpha * dot_prod) + (beta * C[c_ind]);
-    }
-}
-
-/*
-Routine to perform an in-place GEMM operation, i.e., C := alpha*A*B + beta*C
-*/
-
-__global__
 void myGEMMkernel(double* A, double* B, double* C, double alpha, double beta, int M,
            int N, int K,bool AT,bool BT) 
 {
@@ -81,19 +49,82 @@ void myGEMMkernel(double* A, double* B, double* C, double alpha, double beta, in
         int a_ind;
         int b_ind;
         for(int i = 0; i < K; i++) {
-            if (AT)
-                a_ind = (row*K) + i;
-            else
-                a_ind = row + (i*M);
-            if (BT)
-                b_ind = col + (i*N);
-            else
-                b_ind = i + (col * K);
+            a_ind = row + (i*M);
+            b_ind = i + (col * K);
             inner_prod += A[a_ind] * B[b_ind];
         }
     
         C[col*M+row] =alpha*inner_prod+beta*C[col*M+row];
     }
+}
+
+__global__
+void myGEMMkernel1(double* A, double* B, double* C, double alpha, double beta, int M,
+           int N, int K,bool AT,bool BT) 
+{
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = blockIdx.y * blockDim.y + threadIdx.y;
+    if(row<M && col< N)
+    {
+        int ic=(col*M)+row;
+        double inner_prod=0.0;
+        int ia;
+        int ib;
+        for(int i=0;i<K;i++)
+        {
+            ia=(row*K)+i;
+            ib=i+(col*K);
+            inner_prod+= A[ia]*B[ib];
+        }
+        C[ic] =alpha*inner_prod+beta*C[ic];
+        
+    }
+
+}
+
+__global__
+void myGEMMkernel2(double* A, double* B, double* C, double alpha, double beta, int M,
+           int N, int K,bool AT,bool BT) 
+{
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = blockIdx.y * blockDim.y + threadIdx.y;
+    if(row<M && col< N)
+    {
+        int ic=(col*M)+row;
+        double inner_prod=0.0;
+        int ia;
+        int ib;
+        for(int i=0;i<K;i++)
+        {
+            ia=(i*M)+row;
+            ib=col+(i*N);
+            inner_prod+= A[ia]*B[ib];
+        }
+        C[ic] =alpha*inner_prod+beta*C[ic];
+        
+    }
+
+}
+int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
+           int N, int K,bool AT,bool BT) 
+{
+    dim3 dimBlock(32,6);
+    dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
+
+
+   
+    if(AT){
+        myGEMMkernel1<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K,AT,BT);
+    }
+   
+    else if(BT){
+        myGEMMkernel2<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K,AT,BT);
+    }
+    
+    else {
+        myGEMMkernel<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K,AT,BT);
+    }
+        return 0;
 }
 
 /* GPU kernel for 10-class softmax */
@@ -323,23 +354,12 @@ void gpudSigmoid(double *A, double *B, double *C, int M, int N) {
 
 
 
-int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
-           int N, int K,bool AT,bool BT) 
-{
-
-    dim3 dimBlock(32,6);
-    dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
-
-    myGEMMkernel<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K,AT,BT);
-
-    return 0;
-}
 
 
 void softmax_p(double* A,int M, int N)
 {
     dim3 dimBlock(192);
-    dim3 dimGrid((N+dimBlock.y-1)/dimBlock.x);
+    dim3 dimGrid((N+dimBlock.x-1)/dimBlock.x);
     softmax_kernel<<<dimGrid,dimBlock>>>(A,M,N);
 
 }
