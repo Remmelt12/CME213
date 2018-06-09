@@ -7,31 +7,31 @@
 #include <cmath>
 
 #define BLOCK_SIZE 16
-/*
+
 typedef struct {
      int width;
      int height;
      int stride;
      double* elements;
-     //Matrix(){}
-     //Matrix(double* A, int M, int N): width(N), height(M), elements(A),
-     //                                 stride(N){}
-} Matrix; 
+     Matrix(){}
+     Matrix(double* A, int M, int N): width(N), height(M), elements(A),
+                                      stride(N){}
+} Matrix 
 
 // Matrices are stored in row-major order:
 // M(row, col) = *(M.elements + row * M.stride + col)
 
 // Get a matrix element
-__device__ float GetElement(const double*  A, int row, int col,int heigth)
+__device__ float GetElement(const Matrix A, int row, int col)
 {
-     return A[col*heigth + row];
+     return A.elements[row * A.stride + col];
 }
 
 // Set a matrix element
-__device__ void SetElement(double* A, int row, int col, int heigth,
-         double value)
+__device__ void SetElement(Matrix A, int row, int col,
+         float value)
 {
-     A[col*heigth + row] = value;
+     A.elements[row * A.stride + col] = value;
 }
 
 // Get the BLOCK_SIZExBLOCK_SIZE sub-matrix Asub of A that is
@@ -52,23 +52,28 @@ __device__ Matrix GetSubMatrix(Matrix A, int row, int col)
 __global__ void MatMulKernel(const Matrix, const Matrix, Matrix);
 // Matrix multiplication - Host code
 // Matrix dimensions are assumed to be multiples of BLOCK_SIZE
+void MatMul(const Matrix A, const Matrix B, Matrix C)
+{
+
+     // Invoke kernel
+     dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
+     dim3 dimGrid(B.width / dimBlock.x, A.height / dimBlock.y);
+     MatMulKernel<<<dimGrid, dimBlock>>>(A, B, C);
+          // Read C from device memory
+}
 
 // Matrix multiplication kernel called by MatMul()
 __global__ 
-void MatMulKernel(double* A, double* B, double* C,int M, int N, int K)
+void MatMulKernel(Matrix A, Matrix B, Matrix C)
 {
      // Block row and column
      int blockRow = blockIdx.y;
      int blockCol = blockIdx.x;
      // Each thread block computes one sub-matrix Csub of C
-     double* Csub = &C[BLOCK_SIZE * blockRow
-        + BLOCK_SIZE * blockCol * M];
-     //Matrix Csub = GetSubMatrix(C, blockRow, blockCol);
-     
+     Matrix Csub = GetSubMatrix(C, blockRow, blockCol);
      // Each thread computes one element of Csub
      // by accumulating results into Cvalue
-     double Cvalue = 0;
-
+     float Cvalue = 0;
      // Thread row and column within Csub
      int row = threadIdx.y;
      int col = threadIdx.x;
@@ -76,22 +81,18 @@ void MatMulKernel(double* A, double* B, double* C,int M, int N, int K)
       // required to compute Csub
       // Multiply each pair of sub-matrices together
       // and accumulate the results
-      for (int m = 0; m < (K / BLOCK_SIZE); ++m) {
+      for (int m = 0; m < (A.width / BLOCK_SIZE); ++m) {
            // Get sub-matrix Asub of A
-     double* Asub = &A[M * BLOCK_SIZE * blockRow
-        + BLOCK_SIZE * m];
-           //Matrix Asub = GetSubMatrix(A, blockRow, m);
+           Matrix Asub = GetSubMatrix(A, blockRow, m);
            // Get sub-matrix Bsub of B
-     double* Bsub = &B[M * BLOCK_SIZE * m
-        + BLOCK_SIZE * blockCol];
-           //Matrix Bsub = GetSubMatrix(B, m, blockCol);
+           Matrix Bsub = GetSubMatrix(B, m, blockCol);
             // Shared memory used to store Asub and Bsub respectively
-            __shared__ double As[BLOCK_SIZE][BLOCK_SIZE];
-            __shared__ double Bs[BLOCK_SIZE][BLOCK_SIZE];
+            __shared__ float As[BLOCK_SIZE][BLOCK_SIZE];
+            __shared__ float Bs[BLOCK_SIZE][BLOCK_SIZE];
             // Load Asub and Bsub from device memory to shared memory
             // Each thread loads one element of each sub-matrix
-            As[row][col] = GetElement(Asub, row, col, M);
-            Bs[row][col] = GetElement(Bsub, row, col, K);
+            As[row][col] = GetElement(Asub, row, col);
+            Bs[row][col] = GetElement(Bsub, row, col);
             // Synchronize to make sure the sub-matrices are loaded
             // before starting the computation
             __syncthreads();
@@ -105,18 +106,8 @@ void MatMulKernel(double* A, double* B, double* C,int M, int N, int K)
       }
        // Write Csub to device memory
        // Each thread writes one element
-      SetElement(Csub, row, col, Cvalue, M);
+      SetElement(Csub, row, col, Cvalue);
 }
-void MatMul(const double* A, const double* B, double* C)
-{
-
-     // Invoke kernel
-     dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
-     dim3 dimGrid(B.width / dimBlock.x, A.height / dimBlock.y);
-     //MatMulKernel<<<dimGrid, dimBlock>>>(A, B, C);
-          // Read C from device memory
-}
-*/
 __global__
 void device_add_one(int* d_result, int t) {
     *d_result = t + 1;
@@ -230,13 +221,11 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
     }
     
     else {
-        /*
         Matrix MA(A,M,K);
         Matrix MB(B,K,N);
         Matrix MC(C,M,N);
         MatMul(MA,MB,MC);
-        */
-        myGEMMkernel<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K,AT,BT);
+        //myGEMMkernel<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K,AT,BT);
     }
         return 0;
 }
