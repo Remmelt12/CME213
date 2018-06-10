@@ -120,7 +120,7 @@ void MatMul(const double* A, const double* B, double* C)
 }
 */
 __global__
-void matrixMulCUDA(float* C, float* A, float* B, int wA, int wB) {
+void shared_GEMM_kernel(double* A, double* B,double*C, double alpha,double beta, int M, int N,int K ) {
     // Block index
     int bx = blockIdx.x;
     int by = blockIdx.y;
@@ -129,44 +129,49 @@ void matrixMulCUDA(float* C, float* A, float* B, int wA, int wB) {
     int tx = threadIdx.x;
     int ty = threadIdx.y;
 
-    // Index of the first sub-matrix of A processed by the block
-    int aBegin = wA * BLOCK_SIZE * by;
+    int row = bx*BLOCK_SIZE + tx;
+    int col = by*BLOCK_SIZE + ty;
 
-    // Index of the last sub-matrix of A processed by the block
-    int aEnd   = aBegin + wA - 1;
-
-    // Step size used to iterate through the sub-matrices of A
-    int aStep  = BLOCK_SIZE;
-
-    // Index of the first sub-matrix of B processed by the block
-    int bBegin = BLOCK_SIZE * bx;
-
-    // Step size used to iterate through the sub-matrices of B
-    int bStep  = BLOCK_SIZE * wB;
-
-    // Csub is used to store the element of the block sub-matrix
-    // that is computed by the thread
-    float Csub = 0;
+    double Csub = 0.0;
+    __shared__ float As[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ float Bs[BLOCK_SIZE][BLOCK_SIZE];
 
     // Loop over all the sub-matrices of A and B
     // required to compute the block sub-matrix
-    for(int a = aBegin, b = bBegin;
-            a <= aEnd;
-            a += aStep, b += bStep) {
+    int lim = (K+BLOCK_SIZE -1 )/BLOCK_SIZE;
+    for(int k=0;
+            k < lim;
+            k++) {
 
         // Declaration of the shared memory array As used to
         // store the sub-matrix of A
-        __shared__ float As[BLOCK_SIZE][BLOCK_SIZE];
 
         // Declaration of the shared memory array Bs used to
         // store the sub-matrix of B
-        __shared__ float Bs[BLOCK_SIZE][BLOCK_SIZE];
 
         // Load the matrices from device memory
         // to shared memory; each thread loads
         // one element of each matrix
-        As[ty][tx] = A[a + wA * ty + tx];
-        Bs[ty][tx] = B[b + wB * ty + tx];
+        //As[tx][ty]=0.0;
+        
+        if((BLOCK_SIZE*k)<(K-ty))
+        {
+            double * Aview =A+(k*BLOCK_SIZE*M+BLOCK_SIZE*bx);
+            As[tx][ty]=Aview[(ty*M)+tx];
+        }
+        else{
+            As[tx][ty]=0.0;
+        }
+        
+
+        if((BLOCK_SIZE*k)<(K-tx))
+        {
+            double * Bview =B+(by*BLOCK_SIZE*K+BLOCK_SIZE*k);
+            Bs[tx][ty]=Bview[(ty*K)+tx];
+        }
+        else{
+            Bs[tx][ty]=0.0;
+        }
 
         // Synchronize to make sure the matrices are loaded
         __syncthreads();
@@ -188,37 +193,177 @@ void matrixMulCUDA(float* C, float* A, float* B, int wA, int wB) {
 
     // Write the block sub-matrix to device memory;
     // each thread writes one element
-    int c = wB * BLOCK_SIZE * by + BLOCK_SIZE * bx;
-    C[c + wB * ty + tx] = Csub;
+    
+    if(row<M && col<N)
+    {
+        C[col*M+row] =alpha*Csub+beta*C[col*M+row];
+    }
+    
 }
 
 __global__
-void GEMM_shared(double* A, double* B,double*C, double alpha, double beta, int M, int N,
-        int K)
-{
-   const unsigned int bx = BLOCK_X, by = BLOCK_Y;
-   const unsigned int tx = threadIdx.x, ty = threadIdx.y;
-   const unsigned int I = blockIdx.x*bx + tx, J = blockIdx.y*by + ty;
-   const unsigned int gx = gridDim.x, gy = gridDim.y;
-   __shared__ double Asub[BLOCK_X][BLOCK_Y];
-   __shared__ double Bsub[BLOCK_X][BLOCK_Y];
+void shared_GEMM_kernel1(double* A, double* B,double*C, double alpha,double beta, int M, int N,int K ) {
+    // Block index
+    int bx = blockIdx.x;
+    int by = blockIdx.y;
 
-   if(I<M && J<N)
-   {
-       double c = 0.0;
-       for (unsigned int k=0; k < gy; k++){
-           Asub[tx][ty] = A[ J*M+k*by+ty];
-           Bsub[ty][tx] = B[J+N*(k*bx+tx)];
-            __syncthreads(); // Synchronizes all threads in a block
-          for (unsigned int kk=0; kk< bx; kk++){
-               c +=Asub[kk][tx]*Bsub[kk][ty];
-          }
-           __syncthreads(); // Avoids memory hazards
-          }
-     C[J*M+I] = alpha*c+beta*C[J*M+I];
-   }
+    // Thread index
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
 
+    int row = bx*BLOCK_SIZE + tx;
+    int col = by*BLOCK_SIZE + ty;
+
+    double Csub = 0.0;
+    __shared__ float As[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ float Bs[BLOCK_SIZE][BLOCK_SIZE];
+
+    // Loop over all the sub-matrices of A and B
+    // required to compute the block sub-matrix
+    int lim = (K+BLOCK_SIZE -1 )/BLOCK_SIZE;
+    for(int k=0;
+            k < lim;
+            k++) {
+
+        // Declaration of the shared memory array As used to
+        // store the sub-matrix of A
+
+        // Declaration of the shared memory array Bs used to
+        // store the sub-matrix of B
+
+        // Load the matrices from device memory
+        // to shared memory; each thread loads
+        // one element of each matrix
+        //As[tx][ty]=0.0;
+        
+        if((BLOCK_SIZE*k)<(K-ty))
+        {
+            double * Aview =A+(bx*BLOCK_SIZE*M+BLOCK_SIZE*k);
+            As[tx][ty]=Aview[(ty*M)+tx];
+        }
+        else{
+            As[tx][ty]=0.0;
+        }
+        
+
+        if((BLOCK_SIZE*k)<(K-tx))
+        {
+            double * Bview =B+(by*BLOCK_SIZE*K+BLOCK_SIZE*k);
+            Bs[tx][ty]=Bview[(ty*K)+tx];
+        }
+        else{
+            Bs[tx][ty]=0.0;
+        }
+
+        // Synchronize to make sure the matrices are loaded
+        __syncthreads();
+
+        // Multiply the two matrices together;
+        // each thread computes one element
+        // of the block sub-matrix
+#pragma unroll
+
+        for(int k = 0; k < BLOCK_SIZE; ++k) {
+            Csub += As[ty][k] * Bs[k][tx];
+        }
+
+        // Synchronize to make sure that the preceding
+        // computation is done before loading two new
+        // sub-matrices of A and B in the next iteration
+        __syncthreads();
+    }
+
+    // Write the block sub-matrix to device memory;
+    // each thread writes one element
+    
+    if(row<M && col<N)
+    {
+        C[col*M+row] =alpha*Csub+beta*C[col*M+row];
+    }
+    
 }
+__global__
+void shared_GEMM_kernel2(double* A, double* B,double*C, double alpha,double beta, int M, int N,int K ) {
+    // Block index
+    int bx = blockIdx.x;
+    int by = blockIdx.y;
+
+    // Thread index
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+
+    int row = bx*BLOCK_SIZE + tx;
+    int col = by*BLOCK_SIZE + ty;
+
+    double Csub = 0.0;
+    __shared__ float As[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ float Bs[BLOCK_SIZE][BLOCK_SIZE];
+
+    // Loop over all the sub-matrices of A and B
+    // required to compute the block sub-matrix
+    int lim = (K+BLOCK_SIZE -1 )/BLOCK_SIZE;
+    for(int k=0;
+            k < lim;
+            k++) {
+
+        // Declaration of the shared memory array As used to
+        // store the sub-matrix of A
+
+        // Declaration of the shared memory array Bs used to
+        // store the sub-matrix of B
+
+        // Load the matrices from device memory
+        // to shared memory; each thread loads
+        // one element of each matrix
+        //As[tx][ty]=0.0;
+        
+        if((BLOCK_SIZE*k)<(K-ty))
+        {
+            double * Aview =A+(k*BLOCK_SIZE*M+BLOCK_SIZE*bx);
+            As[tx][ty]=Aview[(ty*M)+tx];
+        }
+        else{
+            As[tx][ty]=0.0;
+        }
+        
+
+        if((BLOCK_SIZE*k)<(K-tx))
+        {
+            double * Bview =B+(k*BLOCK_SIZE*N+BLOCK_SIZE*by);
+            Bs[tx][ty]=Bview[(ty*N)+tx];
+        }
+        else{
+            Bs[tx][ty]=0.0;
+        }
+
+        // Synchronize to make sure the matrices are loaded
+        __syncthreads();
+
+        // Multiply the two matrices together;
+        // each thread computes one element
+        // of the block sub-matrix
+#pragma unroll
+
+        for(int k = 0; k < BLOCK_SIZE; ++k) {
+            Csub += As[ty][k] * Bs[k][tx];
+        }
+
+        // Synchronize to make sure that the preceding
+        // computation is done before loading two new
+        // sub-matrices of A and B in the next iteration
+        __syncthreads();
+    }
+
+    // Write the block sub-matrix to device memory;
+    // each thread writes one element
+    
+    if(row<M && col<N)
+    {
+        C[col*M+row] =alpha*Csub+beta*C[col*M+row];
+    }
+    
+}
+
 __global__
 void device_add_one(int* d_result, int t) {
     *d_result = t + 1;
@@ -248,7 +393,7 @@ int useless_gpu_add_one(int t) {
 
 __global__
 void myGEMMkernel(double* A, double* B, double* C, double alpha, double beta, int M,
-           int N, int K,bool AT,bool BT) 
+           int N, int K) 
 {
     int row = blockIdx.x * blockDim.x + threadIdx.x;
     int col = blockIdx.y * blockDim.y + threadIdx.y;
@@ -318,25 +463,24 @@ void myGEMMkernel2(double* A, double* B, double* C, double alpha, double beta, i
 int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
            int N, int K,bool AT,bool BT) 
 {
-
-
    
     if(AT){
-        dim3 dimBlock(32,6);
+        dim3 dimBlock(BLOCK_SIZE,BLOCK_SIZE);
         dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
-        myGEMMkernel1<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K);
+        shared_GEMM_kernel2<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K);
     }
    
     else if(BT){
-        dim3 dimBlock(32,6);
+        dim3 dimBlock(BLOCK_SIZE,BLOCK_SIZE);
         dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
-        myGEMMkernel2<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K);
+        shared_GEMM_kernel2<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K);
     }
     
     else {
-        dim3 dimBlock(BLOCK_X,BLOCK_Y);
+        dim3 dimBlock(BLOCK_SIZE,BLOCK_SIZE);
         dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
-        GEMM_shared<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K);
+        cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
+        shared_GEMM_kernel<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K);
     }
         return 0;
 }
