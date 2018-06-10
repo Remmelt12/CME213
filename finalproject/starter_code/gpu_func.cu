@@ -92,7 +92,45 @@ void shared_GEMM_kernel(double* A, double* B,double*C, double alpha,double beta,
     }
     
 }
+__global__
+void myGEMMKernel(const double* __restrict__ A, const double* __restrict__ B, double* __restrict__ C, double alpha, double beta,
+              int M, int N, int K) {
+    int blockCol = blockIdx.y;
+    int blockRow = blockIdx.x;
+    int col = threadIdx.y;
+    int row = threadIdx.x;
+    __shared__ double As[BLOCK_SIZE][BLOCK_SIZE+1];
+    __shared__ double Bs[BLOCK_SIZE][BLOCK_SIZE+1];
 
+    double Cvalue = 0;
+    for (int m = 0; m < ((K + BLOCK_SIZE - 1) / BLOCK_SIZE); ++m) {
+        // Get sub-matrices
+        //double* Asub = A + (M * BLOCK_SIZE * m + BLOCK_SIZE * blockRow);
+        //double* Bsub = B + (K * BLOCK_SIZE * blockCol + BLOCK_SIZE * m);
+        if(BLOCK_SIZE * m + col < K)
+            As[row][col] = A[M * BLOCK_SIZE * m + (M * col) + BLOCK_SIZE * blockRow + row];
+        else
+            As[row][col] = 0;
+        
+        if(BLOCK_SIZE * m + row < K)
+            Bs[row][col] = B[K * BLOCK_SIZE * blockCol + (K * col) + BLOCK_SIZE * m + row];
+        else
+            Bs[row][col] = 0;
+               
+        __syncthreads();
+        // Multiply Asub and Bsub together
+        for (int e = 0; e < BLOCK_SIZE; ++e)
+            Cvalue += alpha * (As[row][e] * Bs[e][col]);
+        __syncthreads();
+    }
+    // Write Csub to device memory each thread writes one element
+    if(((BLOCK_SIZE * blockCol + col < N) && (BLOCK_SIZE * blockRow + row < M))){
+        double* Csub = C + (M * BLOCK_SIZE * blockCol + BLOCK_SIZE * blockRow);
+        int Csub_idx = col * M + row;
+        Cvalue += beta * Csub[Csub_idx];
+        Csub[Csub_idx] = Cvalue;
+    }
+}
 __global__
 void shared_GEMM_kernel1(double* A, double* B,double*C, double alpha,double beta, int M, int N,int K ) {
     // Block index
