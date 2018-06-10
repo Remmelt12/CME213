@@ -6,12 +6,11 @@
 #include "cublas_v2.h"
 #include <cmath>
 
-#define BLOCK_SIZE 16
-#define BLOCK_X 32
-#define BLOCK_Y 32
+#define BLOCK_SIZE 32
 
 __global__
-void shared_GEMM_kernel(double* A, double* B,double*C, double alpha,double beta, int M, int N,int K ) {
+void shared_GEMM_kernel(double* __restrict__ A, double*__restrict__
+        B,double*__restrict__ C, double alpha,double beta, int M, int N,int K ) {
     // Block index
     int bx = blockIdx.x;
     int by = blockIdx.y;
@@ -24,31 +23,17 @@ void shared_GEMM_kernel(double* A, double* B,double*C, double alpha,double beta,
     int col = by*BLOCK_SIZE + ty;
 
     double Csub = 0.0;
-    __shared__ float As[BLOCK_SIZE][BLOCK_SIZE+1];
-    __shared__ float Bs[BLOCK_SIZE][BLOCK_SIZE+1];
+    __shared__ double As[BLOCK_SIZE][BLOCK_SIZE+1];
+    __shared__ double Bs[BLOCK_SIZE][BLOCK_SIZE+1];
 
     // Loop over all the sub-matrices of A and B
     // required to compute the block sub-matrix
     int lim = (K+BLOCK_SIZE -1 )/BLOCK_SIZE;
-    for(int k=0;
-            k < lim;
-            k++) {
-
-        // Declaration of the shared memory array As used to
-        // store the sub-matrix of A
-
-        // Declaration of the shared memory array Bs used to
-        // store the sub-matrix of B
-
-        // Load the matrices from device memory
-        // to shared memory; each thread loads
-        // one element of each matrix
-        //As[tx][ty]=0.0;
-        
+    for(int k=0; k < lim; k++) 
+    {
         if((BLOCK_SIZE*k)+ty<K)
         {
-            double * Aview =A+(k*BLOCK_SIZE*M+BLOCK_SIZE*bx);
-            As[tx][ty]=Aview[(ty*M)+tx];
+            As[tx][ty]=A[k*BLOCK_SIZE*M+BLOCK_SIZE*bx+(ty*M)+tx];
         }
         else{
             As[tx][ty]=0.0;
@@ -56,8 +41,7 @@ void shared_GEMM_kernel(double* A, double* B,double*C, double alpha,double beta,
 
         if((BLOCK_SIZE*k+tx)<K)
         {
-            double * Bview =B+(by*BLOCK_SIZE*K+BLOCK_SIZE*k);
-            Bs[tx][ty]=Bview[(ty*K)+tx];
+            Bs[tx][ty]=B[(by*BLOCK_SIZE*K+BLOCK_SIZE*k+ty*K)+tx];
         }
         else{
             Bs[tx][ty]=0.0;
@@ -72,7 +56,7 @@ void shared_GEMM_kernel(double* A, double* B,double*C, double alpha,double beta,
 #pragma unroll
 
         for(int k = 0; k < BLOCK_SIZE; ++k) {
-            Csub += alpha*As[ty][k] * Bs[k][tx];
+            Csub += (As[tx][k] * Bs[k][ty]);
         }
 
         // Synchronize to make sure that the preceding
@@ -83,53 +67,11 @@ void shared_GEMM_kernel(double* A, double* B,double*C, double alpha,double beta,
 
     // Write the block sub-matrix to device memory;
     // each thread writes one element
-    
-    if((BLOCK_SIZE*bx+tx)<M &&(BLOCK_SIZE*by+ty) <N)
+    if(row<M && col <N)
     {
-        Csub+=beta*C[col*M+row];
-        double* Cview = C+(BLOCK_SIZE*by*M+BLOCK_SIZE*bx);
-        Cview[ty*M+tx] = Csub;
+        C[col*M+row] = alpha*Csub+C[col*M+row];
     }
     
-}
-__global__
-void myGEMMKernel(const double* __restrict__ A, const double* __restrict__ B, double* __restrict__ C, double alpha, double beta,
-              int M, int N, int K) {
-    int blockCol = blockIdx.y;
-    int blockRow = blockIdx.x;
-    int col = threadIdx.y;
-    int row = threadIdx.x;
-    __shared__ double As[BLOCK_SIZE][BLOCK_SIZE+1];
-    __shared__ double Bs[BLOCK_SIZE][BLOCK_SIZE+1];
-
-    double Cvalue = 0;
-    for (int m = 0; m < ((K + BLOCK_SIZE - 1) / BLOCK_SIZE); ++m) {
-        // Get sub-matrices
-        //double* Asub = A + (M * BLOCK_SIZE * m + BLOCK_SIZE * blockRow);
-        //double* Bsub = B + (K * BLOCK_SIZE * blockCol + BLOCK_SIZE * m);
-        if(BLOCK_SIZE * m + col < K)
-            As[row][col] = A[M * BLOCK_SIZE * m + (M * col) + BLOCK_SIZE * blockRow + row];
-        else
-            As[row][col] = 0;
-        
-        if(BLOCK_SIZE * m + row < K)
-            Bs[row][col] = B[K * BLOCK_SIZE * blockCol + (K * col) + BLOCK_SIZE * m + row];
-        else
-            Bs[row][col] = 0;
-               
-        __syncthreads();
-        // Multiply Asub and Bsub together
-        for (int e = 0; e < BLOCK_SIZE; ++e)
-            Cvalue += alpha * (As[row][e] * Bs[e][col]);
-        __syncthreads();
-    }
-    // Write Csub to device memory each thread writes one element
-    if(((BLOCK_SIZE * blockCol + col < N) && (BLOCK_SIZE * blockRow + row < M))){
-        double* Csub = C + (M * BLOCK_SIZE * blockCol + BLOCK_SIZE * blockRow);
-        int Csub_idx = col * M + row;
-        Cvalue += beta * Csub[Csub_idx];
-        Csub[Csub_idx] = Cvalue;
-    }
 }
 __global__
 void shared_GEMM_kernel1(double* A, double* B,double*C, double alpha,double beta, int M, int N,int K ) {
@@ -145,8 +87,8 @@ void shared_GEMM_kernel1(double* A, double* B,double*C, double alpha,double beta
     int col = by*BLOCK_SIZE + ty;
 
     double Csub = 0.0;
-    __shared__ float As[BLOCK_SIZE][BLOCK_SIZE];
-    __shared__ float Bs[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ double As[BLOCK_SIZE][BLOCK_SIZE+1];
+    __shared__ double Bs[BLOCK_SIZE][BLOCK_SIZE+1];
 
     // Loop over all the sub-matrices of A and B
     // required to compute the block sub-matrix
@@ -155,31 +97,27 @@ void shared_GEMM_kernel1(double* A, double* B,double*C, double alpha,double beta
             k < lim;
             k++) {
 
-        // Declaration of the shared memory array As used to
-        // store the sub-matrix of A
-
-        // Declaration of the shared memory array Bs used to
-        // store the sub-matrix of B
-
-        // Load the matrices from device memory
-        // to shared memory; each thread loads
-        // one element of each matrix
-        //As[tx][ty]=0.0;
         
-        if((BLOCK_SIZE*k)<(K-ty))
+        if((BLOCK_SIZE*k)+ty<K)
         {
-            double * Aview =A+(bx*BLOCK_SIZE*M+BLOCK_SIZE*k);
-            As[tx][ty]=Aview[(ty*M)+tx];
+            /*
+            double * Aview =A+(bx*BLOCK_SIZE*K+BLOCK_SIZE*k);
+            As[tx][ty]=Aview[(ty*K)+tx];
+            */
+            As[tx][ty]=A[bx*BLOCK_SIZE*K+BLOCK_SIZE*k+tx*K+ty];
         }
         else{
             As[tx][ty]=0.0;
         }
         
 
-        if((BLOCK_SIZE*k)<(K-tx))
+        if((BLOCK_SIZE*k)+tx<K)
         {
+            /*
             double * Bview =B+(by*BLOCK_SIZE*K+BLOCK_SIZE*k);
             Bs[tx][ty]=Bview[(ty*K)+tx];
+            */
+            Bs[tx][ty]=B[by*BLOCK_SIZE*K+BLOCK_SIZE*k+ty*K+tx];
         }
         else{
             Bs[tx][ty]=0.0;
@@ -194,7 +132,7 @@ void shared_GEMM_kernel1(double* A, double* B,double*C, double alpha,double beta
 #pragma unroll
 
         for(int k = 0; k < BLOCK_SIZE; ++k) {
-            Csub += As[ty][k] * Bs[k][tx];
+            Csub += As[tx][k] * Bs[k][ty];
         }
 
         // Synchronize to make sure that the preceding
@@ -213,7 +151,7 @@ void shared_GEMM_kernel1(double* A, double* B,double*C, double alpha,double beta
     
 }
 __global__
-void shared_GEMM_kernel2(double* A, double* B,double*C, double alpha,double beta, int M, int N,int K ) {
+void shared_GEMM_kernel2(const double* __restrict__ A,const double* __restrict__ B,double* C, double alpha,double beta, int M, int N,int K ) {
     // Block index
     int bx = blockIdx.x;
     int by = blockIdx.y;
@@ -226,61 +164,38 @@ void shared_GEMM_kernel2(double* A, double* B,double*C, double alpha,double beta
     int col = by*BLOCK_SIZE + ty;
 
     double Csub = 0.0;
-    __shared__ float As[BLOCK_SIZE][BLOCK_SIZE];
-    __shared__ float Bs[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ double As[BLOCK_SIZE][BLOCK_SIZE+1];
+    __shared__ double Bs[BLOCK_SIZE][BLOCK_SIZE+1];
 
-    // Loop over all the sub-matrices of A and B
-    // required to compute the block sub-matrix
     int lim = (K+BLOCK_SIZE -1 )/BLOCK_SIZE;
-    for(int k=0;
-            k < lim;
-            k++) {
-
-        // Declaration of the shared memory array As used to
-        // store the sub-matrix of A
-
-        // Declaration of the shared memory array Bs used to
-        // store the sub-matrix of B
-
-        // Load the matrices from device memory
-        // to shared memory; each thread loads
-        // one element of each matrix
-        //As[tx][ty]=0.0;
-        
-        if((BLOCK_SIZE*k)<(K-ty))
+    for(int k=0; k < lim; k++) 
+    {
+        if(BLOCK_SIZE*k+ty<K)
         {
-            double * Aview =A+(k*BLOCK_SIZE*M+BLOCK_SIZE*bx);
+            const double * Aview =A+(k*BLOCK_SIZE*M+BLOCK_SIZE*bx);
             As[tx][ty]=Aview[(ty*M)+tx];
         }
         else{
             As[tx][ty]=0.0;
         }
-        
 
-        if((BLOCK_SIZE*k)<(K-tx))
+        if(BLOCK_SIZE*k+tx<K)
         {
-            double * Bview =B+(k*BLOCK_SIZE*N+BLOCK_SIZE*by);
-            Bs[tx][ty]=Bview[(ty*N)+tx];
+            const double * Bview =B+(k*BLOCK_SIZE*N+BLOCK_SIZE*by);
+            Bs[tx][ty]=Bview[(tx*N)+ty];
         }
         else{
             Bs[tx][ty]=0.0;
         }
 
-        // Synchronize to make sure the matrices are loaded
         __syncthreads();
 
-        // Multiply the two matrices together;
-        // each thread computes one element
-        // of the block sub-matrix
 #pragma unroll
 
         for(int k = 0; k < BLOCK_SIZE; ++k) {
-            Csub += As[ty][k] * Bs[k][tx];
+            Csub += As[tx][k] * Bs[k][ty];
         }
 
-        // Synchronize to make sure that the preceding
-        // computation is done before loading two new
-        // sub-matrices of A and B in the next iteration
         __syncthreads();
     }
 
@@ -397,22 +312,21 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
     if(AT){
         dim3 dimBlock(BLOCK_SIZE,BLOCK_SIZE);
         dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
-        shared_GEMM_kernel2<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K);
+        cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
+        shared_GEMM_kernel1<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K);
     }
    
     else if(BT){
         dim3 dimBlock(BLOCK_SIZE,BLOCK_SIZE);
         dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
+        cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
         shared_GEMM_kernel2<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K);
     }
     
     else {
         dim3 dimBlock(BLOCK_SIZE,BLOCK_SIZE);
-
         dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
-
         cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
-        
         shared_GEMM_kernel<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K);
     }
         return 0;
