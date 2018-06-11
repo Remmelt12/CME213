@@ -505,9 +505,10 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
         check_launch("sGEMM_kernel");
     }
     return 0;
+    /*
     if(AT){
         dim3 dimBlock(BLOCK_SIZE,BLOCK_SIZE);
-        dim3 dimGrid((M+dimBlock.x-1)/dimBlock.x, (N+dimBlock.y-1)/dimBlock.y);
+        dim3 dimGrid((N+dimBlock.x-1)/dimBlock.x, (M+dimBlock.y-1)/dimBlock.y);
         cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
         shared_GEMM_kernel1<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K);
     }
@@ -526,6 +527,7 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M,
         shared_GEMM_kernel<<<dimGrid, dimBlock>>>(A,B,C,*alpha,*beta,M,N,K);
     }
         return 0;
+        */
 }
 
 /* GPU kernel for 10-class softmax */

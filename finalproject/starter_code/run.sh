@@ -38,7 +38,7 @@ echo
 echo Output from code
 echo ----------------
 
-MV2_USE_CUDA=1 mpirun -np 4 nvprof --output-profile profile.%p.nvprof ./main -g
-1
+#MV2_USE_CUDA=1 mpirun -np 4 nvprof --output-profile profile.%p.nvprof ./main -g
+#1
 #mpirun -np 4 ./main -s -n 1000 -b 800 -l 0.01 -e 20
-# mpirun -np 4 ./main 
+mpirun -np 4 ./main -g 3 

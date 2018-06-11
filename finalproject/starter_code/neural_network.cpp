@@ -472,6 +472,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
     arma::mat hdw1_l(D3,D2);
     arma::mat hdb0_l(D2,1);
     arma::mat hdb1_l(D3,1);
+    /*
     int Xcount = 0;
     int ycount = 0;
     std::vector<int> Xsendcounts(num_procs, 0);
@@ -523,6 +524,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
 	       y_host,
 	       sizeof(double) * nn.H[2] * N_special * num_batches,
 	       cudaMemcpyHostToDevice);
+    */
     for(int epoch = 0; epoch < epochs; ++epoch) {
         int num_batches = (N + batch_size - 1)/batch_size;
         for(int batch = 0; batch < num_batches; ++batch) {
