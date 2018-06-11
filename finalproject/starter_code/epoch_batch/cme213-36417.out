@@ -1,0 +1,34 @@
+The master node of this job is gpu-200-1.stanford.edu
+This job runs on the following nodes:
+gpu-200-1
+Starting at Sun Jun 10 19:50:42 PDT 2018
+Running on hosts: gpu-200-1
+Running on 1 nodes.
+Running on 24 processors.
+Current working directory is ./
+
+Output from code
+----------------
+Number of MPI processes = 4
+Number of CUDA devices = 4
+num_neuron=100, reg=0.0001, learning_rate=0.01, num_epochs=10, batch_size=800
+Loading training data...
+Training data stats...
+Size of x_train, N =  60000
+Size of label_train = 60000
+Start Sequential Training
+Time for Sequential Training: 31.811 seconds
+Precision on validation set for sequential training = 0.924167
+
+Start Parallel Training
+Time for Parallel Training: 5.47479 seconds
+Precision on validation set for parallel training = 0.924167
+
+Grading mode on. Checking for correctness
+
+
+max norm of diff b/w seq and par: W[0]: 1.81131e-08, b[0]: 2.73664e-08
+l2  norm of diff b/w seq and par: W[0]: 1.31076e-08, b[0]: 8.62653e-09
+
+max norm of diff b/w seq and par: W[1]: 1.13661e-10, b[1]: 9.25807e-10
+l2  norm of diff b/w seq and par: W[1]: 2.31091e-10, b[1]: 8.25034e-10

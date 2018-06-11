@@ -472,59 +472,6 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
     arma::mat hdw1_l(D3,D2);
     arma::mat hdb0_l(D2,1);
     arma::mat hdb1_l(D3,1);
-    /*
-    int Xcount = 0;
-    int ycount = 0;
-    std::vector<int> Xsendcounts(num_procs, 0);
-    std::vector<int> Xdispl(num_procs, 0);
-    std::vector<int> ysendcounts(num_procs, 0);
-    std::vector<int> ydispl(num_procs, 0);
-
-    for(int batch = 0; batch < num_batches; ++batch) {
-      int column  = std::min(N - 1, (batch + 1) * batch_size - 1);
-      int batch_N = column + 1 - batch * batch_size;
-      int N_pc2   = batch_N / num_procs;
-
-      Xsendcounts[0] = (N_pc2 + batch_N % num_procs) * nn.H[0];
-      Xdispl[0]      = 0;
-      ysendcounts[0] = (N_pc2 + batch_N % num_procs) * nn.H[2];
-      ydispl[0]      = 0;
-
-      Xcount = N_pc2 * nn.H[0];   ycount = N_pc2 * nn.H[2];
-
-      if (rank == 0) {
-	Xcount += (batch_N % num_procs) * nn.H[0];
-	ycount += (batch_N % num_procs) * nn.H[2];
-      }
-
-      for(int i = 0; i < num_procs; ++i){
-	Xsendcounts[i] = N_pc2 * nn.H[0];
-	Xdispl[i]      = Xsendcounts[i-1] + Xdispl[i-1];
-	ysendcounts[i] = N_pc2 * nn.H[2];
-	ydispl[i]      = ysendcounts[i-1] + ydispl[i-1];
-      }
-
-      MPI_SAFE_CALL(MPI_Scatterv(X.colptr(batch * batch_size),
-				 Xsendcounts.data(), Xdispl.data(), MPI_DOUBLE,
-				 X_host + batch * (N_special) * nn.H[0], Xcount,
-                                 MPI_DOUBLE, 0, MPI_COMM_WORLD));
-      MPI_SAFE_CALL(MPI_Scatterv(y.colptr(batch * batch_size),
-				 ysendcounts.data(), ydispl.data(), MPI_DOUBLE,
-				 y_host + batch * (N_special) * nn.H[2], ycount,
-                                 MPI_DOUBLE, 0, MPI_COMM_WORLD));
-    }
-
-    // Copying the data from host to the device
-    cudaMemcpy(X_dev,
-	       X_host,
-	       sizeof(double) * nn.H[0] * N_special * num_batches,
-	       cudaMemcpyHostToDevice);
-
-    cudaMemcpy(y_dev,
-	       y_host,
-	       sizeof(double) * nn.H[2] * N_special * num_batches,
-	       cudaMemcpyHostToDevice);
-    */
     for(int epoch = 0; epoch < epochs; ++epoch) {
         int num_batches = (N + batch_size - 1)/batch_size;
         for(int batch = 0; batch < num_batches; ++batch) {
@@ -549,6 +496,7 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             MPI_SAFE_CALL(MPI_Scatter(y.colptr(batch_start),D0*D3,MPI_DOUBLE
                                         ,&y_sub[0],D0*D3,MPI_DOUBLE,0,MPI_COMM_WORLD));
 
+            //copy the data to the device
             checkCudaErrors(cudaMemcpy(d.X, &x_sub[0], sizeof(double) * D1 * D0, cudaMemcpyHostToDevice));
             checkCudaErrors(cudaMemcpy(d.Y, &y_sub[0], sizeof(double) * D3 * D0, cudaMemcpyHostToDevice));
             checkCudaErrors(cudaMemcpy(d.W0, nn.W[0].memptr(), sizeof(double) *D1 * D2, cudaMemcpyHostToDevice));
@@ -556,18 +504,22 @@ void parallel_train(NeuralNetwork& nn, const arma::mat& X, const arma::mat& y,
             checkCudaErrors(cudaMemcpy(d.W1, nn.W[1].memptr(), sizeof(double) * D2 * D3, cudaMemcpyHostToDevice));
             checkCudaErrors(cudaMemcpy(d.b1, nn.b[1].memptr(), sizeof(double) * D3, cudaMemcpyHostToDevice));
 
+            // feed forward and backprop in one.
             feedforward_gpu(d,nn,reg2,D0,num_elem);
             
+            //copy the gradients back
             checkCudaErrors(cudaMemcpy(hdw0_l.memptr(), d.DW0, sizeof(double) * D1*D2, cudaMemcpyDeviceToHost));
             checkCudaErrors(cudaMemcpy(hdb0_l.memptr(), d.Db0, sizeof(double) * D2, cudaMemcpyDeviceToHost));
             checkCudaErrors(cudaMemcpy(hdw1_l.memptr(), d.DW1, sizeof(double) * D2*D3, cudaMemcpyDeviceToHost));
             checkCudaErrors(cudaMemcpy(hdb1_l.memptr(), d.Db1, sizeof(double) * D3, cudaMemcpyDeviceToHost));
 
+            // Reduce
             MPI_SAFE_CALL(MPI_Allreduce(hdw0_l.memptr(),hdw0.memptr(), D2 * D1, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD));
             MPI_SAFE_CALL(MPI_Allreduce(hdw1_l.memptr(),hdw1.memptr(), D3 * D2, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD));
             MPI_SAFE_CALL(MPI_Allreduce(hdb0_l.memptr(),hdb0.memptr(), D2, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD));
             MPI_SAFE_CALL(MPI_Allreduce(hdb1_l.memptr(),hdb1.memptr(), D3, MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD));
 
+            //Gradient decent step
             nn.W[0]=nn.W[0]-(learning_rate)*hdw0;
             nn.W[1]=nn.W[1]-(learning_rate)*hdw1;
             nn.b[0]=nn.b[0]-(learning_rate)*hdb0;

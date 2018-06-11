@@ -21,7 +21,7 @@ void shared_GEMM_kernel(double* __restrict__ A, double* __restrict__ B, double* 
     double C_aggr = 0.0;
     int lim = (K + BLOCK_SIZE - 1)/BLOCK_SIZE;
     for (int i = 0; i < lim; ++i) {
-        //fill in shared memory
+        // copy int shared submatrices.
         if ((BLOCK_SIZE * i) < (K - ty)) {
             double *A_part = A + (M * BLOCK_SIZE * i + BLOCK_SIZE * bx);
             int ia = (ty * M) + tx;
@@ -42,7 +42,7 @@ void shared_GEMM_kernel(double* __restrict__ A, double* __restrict__ B, double* 
 
         __syncthreads();
 
-        //matrix multiplication
+        //submatrix multiplication
 #pragma unroll
         for (int j = 0; j < BLOCK_SIZE; ++j) {
             C_aggr += As[tx][j] * Bs[j][ty];
@@ -75,14 +75,14 @@ void shared_GEMM_kernel1(double* __restrict__ A, double* __restrict__ B, double*
     double C_aggr = 0;
     int lim = (K + BLOCK_SIZE - 1) /  BLOCK_SIZE;
     for (int i = 0; i < lim; ++i) {
-        // fill in shared memory
+        // copy int shared submatrices.
         if(BLOCK_SIZE * i < K - ty) {
             double* A_part = A + (K * BLOCK_SIZE * bx + BLOCK_SIZE * i);
             int ia = (tx * K) + ty;
             As[tx][ty] = A_part[ia];
         }
         else
-            As[tx][ty] = 0;    
+            As[tx][ty] = 0.0;    
 
         if(BLOCK_SIZE * i < K - tx) {
             double* B_part = B + (K * BLOCK_SIZE * by + BLOCK_SIZE * i);
@@ -90,11 +90,11 @@ void shared_GEMM_kernel1(double* __restrict__ A, double* __restrict__ B, double*
             Bs[tx][ty] = B_part[ib];
         }
         else
-            Bs[tx][ty] = 0;
+            Bs[tx][ty] = 0.0;
 
         __syncthreads();
         
-        //matrix multiplication
+        //submatrix multiplication
 #pragma unroll
         for (int j = 0; j < BLOCK_SIZE; ++j)
             C_aggr += As[tx][j] * Bs[j][ty];
@@ -125,14 +125,14 @@ void shared_GEMM_kernel2(double* __restrict__ A, double* __restrict__ B, double*
     int lim = (K + BLOCK_SIZE - 1) /  BLOCK_SIZE;
 
     for (int i = 0; i < lim; ++i) {
-        // fill in shared memory
+        // copy int shared submatrices.
         if(BLOCK_SIZE * i < K - ty) {
             double* A_part = A + (M * BLOCK_SIZE * i + BLOCK_SIZE * bx);
             int ia = (ty * M) + tx;
             As[tx][ty] = A_part[ia];
         }
         else
-            As[tx][ty] = 0;    
+            As[tx][ty] = 0.0;    
 
         if(BLOCK_SIZE * i < K - tx) {
             double* B_part = B + (N * BLOCK_SIZE * i + BLOCK_SIZE * by);
@@ -140,11 +140,11 @@ void shared_GEMM_kernel2(double* __restrict__ A, double* __restrict__ B, double*
             Bs[tx][ty] = B_part[ib];
         }
         else
-            Bs[tx][ty] = 0;
+            Bs[tx][ty] = 0.0;
 
         __syncthreads();
         
-        //matrix multiplication
+        //submatrix multiplication
 #pragma unroll
         for (int j = 0; j < BLOCK_SIZE; ++j)
             C_aggr += As[tx][j] * Bs[j][ty];
